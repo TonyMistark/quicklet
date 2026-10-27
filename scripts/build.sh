@@ -23,9 +23,14 @@ APPEX="$APP/Contents/PlugIns/QuickletFinder.appex"
 
 # 1. Build (ad-hoc). -disable-sandbox is required when building from
 #    sandboxed host environments; harmless in a normal terminal.
+#    CODE_SIGN_ENTITLEMENTS= skips entitlement embedding during the ad-hoc
+#    build: xcodebuild would otherwise demand a provisioning profile for
+#    the App Groups entitlement. The full entitlements (sandbox + app
+#    group) are embedded in the re-sign step below.
 xcodebuild -project Quicklet.xcodeproj -scheme Quicklet \
   -configuration Debug -derivedDataPath "$DERIVED" build \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
+  CODE_SIGN_ENTITLEMENTS= \
   ${TEAM:+DEVELOPMENT_TEAM=$TEAM} \
   OTHER_SWIFT_FLAGS='$(inherited) -disable-sandbox'
 
