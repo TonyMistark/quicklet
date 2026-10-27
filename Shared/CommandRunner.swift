@@ -12,13 +12,14 @@ enum CommandRunner {
         static let firstPath = "{path}"
         static let directory = "{dir}"
         static let parentDirectory = "{parent}"
+        static let input = "{input}"
     }
 
     /// Runs `command` against `paths`. Returns false when the process
     /// could not be started.
     @discardableResult
-    static func run(_ command: QuickletCommand, paths: [String]) -> Bool {
-        let script = expand(template: command.script, paths: paths)
+    static func run(_ command: QuickletCommand, paths: [String], input: String? = nil) -> Bool {
+        let script = expand(template: command.script, paths: paths, input: input)
         guard !script.isEmpty else {
             Diagnostics.log("skip '\(command.name)': empty script after expansion")
             return false
@@ -64,7 +65,7 @@ enum CommandRunner {
     ///
     /// A placeholder that is already wrapped in quotes (`"{dir}"`) keeps
     /// working: the wrapping quotes are dropped so the path is quoted once.
-    static func expand(template: String, paths: [String]) -> String {
+    static func expand(template: String, paths: [String], input: String? = nil) -> String {
         let quoted = paths.map(\.shellQuoted)
         let firstURL = paths.first.map { URL(fileURLWithPath: $0) }
         let parentDirectory = firstURL?.deletingLastPathComponent().path.shellQuoted ?? ""
@@ -87,6 +88,7 @@ enum CommandRunner {
             (Placeholder.parentDirectory, parentDirectory),
             (Placeholder.firstPath, quoted.first ?? ""),
             (Placeholder.directory, workingDirectory),
+            (Placeholder.input, (input ?? "").shellQuoted),
         ]
 
         var script = template

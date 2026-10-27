@@ -84,7 +84,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Diagnostics.log("command \(id.uuidString) not found (config has \(store.commands.count) entries)")
             return
         }
-        CommandRunner.run(command, paths: paths)
+
+        // Commands such as "new file" need one line of input from the user
+        // before the shell runs; the value is exposed as {input}.
+        if command.needsInput {
+            guard let input = requestInput(for: command, paths: paths) else {
+                Diagnostics.log("no input for '\(command.name)', nothing ran")
+                return
+            }
+            CommandRunner.run(command, paths: paths, input: input)
+        } else {
+            CommandRunner.run(command, paths: paths)
+        }
+    }
+
+    /// Shows a one-field modal prompt. Returns nil when cancelled or empty.
+    private func requestInput(for command: QuickletCommand, paths: [String]) -> String? {
+        let alert = NSAlert()
+        alert.messageText = command.promptTitle ?? command.name
+        if let first = paths.first {
+            alert.informativeText = "位置：\(first)"
+        }
+        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "取消")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.placeholderString = command.promptPlaceholder ?? "请输入"
+        field.font = .systemFont(ofSize: 13)
+        alert.accessoryView = field
+
+        // The app is a menu bar agent, so it has to come forward explicitly
+        // or the modal prompt can appear behind the Finder window.
+        NSApp.activate(ignoringOtherApps: true)
+        alert.window.initialFirstResponder = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+
+        let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        Diagnostics.log("input for '\(command.name)': \(text)")
+        return text
     }
 
     // MARK: - Windows

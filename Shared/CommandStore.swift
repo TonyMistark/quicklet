@@ -94,6 +94,13 @@ final class CommandStore: ObservableObject {
                 icon: "chevron.left.forwardslash.chevron.right",
                 script: #"open -a "Visual Studio Code" {paths}"#
             ),
+            QuickletCommand(
+                name: "新建文件…",
+                icon: "doc.badge.plus",
+                script: #"test -e {dir}/{input} && { echo "同名文件已存在，未覆盖"; exit 1; }; touch {dir}/{input}; open -R {dir}/{input}"#,
+                promptTitle: "新建文件",
+                promptPlaceholder: "文件名，例如 notes.md"
+            ),
         ]
     }
 }

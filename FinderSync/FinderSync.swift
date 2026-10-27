@@ -54,7 +54,15 @@ final class FinderSync: FIFinderSync {
         guard sender.tag >= 0, sender.tag < commands.count else { return }
         let command = commands[sender.tag]
 
-        let urls = FIFinderSyncController.default().selectedItemURLs() ?? []
+        let controller = FIFinderSyncController.default()
+        var urls = controller.selectedItemURLs() ?? []
+
+        // Right-clicking empty space inside a folder selects nothing; fall
+        // back to the folder being viewed so commands like "new file" still
+        // know where to work.
+        if urls.isEmpty, let targeted = controller.targetedURL() {
+            urls = [targeted]
+        }
         let paths = urls.map(\.path)
 
         guard let handoffURL = CommandURL.make(commandID: command.id, paths: paths) else {

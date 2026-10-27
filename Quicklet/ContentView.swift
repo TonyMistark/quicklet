@@ -168,7 +168,7 @@ private struct CommandDetail: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text("在 Finder 脚本中可用占位符：{paths}（全部选中路径）、{path}（第一个路径）、{dir}（工作目录：选中文件夹时是它本身，选中文件时是所在目录）、{parent}（始终为所在目录）")
+            Text("在 Finder 脚本中可用占位符：{paths}（全部选中路径）、{path}（第一个路径）、{dir}（工作目录：选中文件夹时是它本身，选中文件时是所在目录）、{parent}（始终为所在目录）、{input}（输入框内容）")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
