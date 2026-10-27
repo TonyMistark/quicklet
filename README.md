@@ -159,6 +159,29 @@ menu structure: 文件{复制路径}
 信号处理里只做 `write(2)`、`unlink(2)` 和栈回溯，避免崩溃时再崩；之后恢复默认处理，
 系统自身的 `.ips` 报告仍会正常生成。
 
+## 仓库与发布
+
+| 远程 | 地址 | 用途 |
+| --- | --- | --- |
+| `origin` | `git@github.com:TonyMistark/quicklet.git` | **开发主线**，所有提交都推这里 |
+| `gitee` | `git@gitee.com:Micestark/quicklet.git` | **仅发布镜像**，只在打版本时同步 |
+
+日常开发只跟 GitHub 打交道：
+
+```sh
+git push            # 等价于 git push origin main（remote.pushDefault 已设为 origin）
+```
+
+发版本时用脚本一次搞定（打 tag → 推 GitHub → 镜像到 Gitee）：
+
+```sh
+scripts/release.sh v1.0.0          # 打 tag 并同步
+scripts/release.sh v1.0.0 --build  # 先构建，额外产出 dist/Quicklet-v1.0.0.zip
+```
+
+脚本会在动手前检查：必须在 `main` 分支、工作区必须干净、tag 不能已存在。
+构建产物 `dist/*.zip` 用于上传到 Gitee 的 Release 附件。
+
 ## 已知限制 / Roadmap
 
 - [ ] 按选中类型（文件/文件夹）过滤菜单项
@@ -173,7 +196,9 @@ project.yml                 # xcodegen 配置
 Quicklet/                   # 主 App（SwiftUI，菜单栏 + 设置窗口 + URL 处理）
 FinderSync/                 # Finder Sync 扩展（仅渲染菜单 + 传话）
 Shared/                     # 两端共享：命令模型、JSON 存储、URL 协议、执行器、权限检查
-scripts/build.sh            # 构建 + 重签脚本
+scripts/build.sh            # 构建 + 重签 + 安装到 /Applications
+scripts/release.sh          # 打 tag 并同步 GitHub / Gitee
+dist/                       # release.sh --build 产出的安装包（未纳入版本管理）
 scripts/app.entitlements    # 主 App：仅 App Groups（不沙箱）
 scripts/appex.entitlements  # 扩展：沙箱 + App Groups
 ```
