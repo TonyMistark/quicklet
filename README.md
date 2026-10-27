@@ -2,6 +2,9 @@
 
 macOS Finder 右键菜单定制器：把你的自定义 Shell 命令加进 Finder 右键第一级菜单。
 
+> 产品文档见 [`docs/PRD.md`](docs/PRD.md)（定位、竞品分析、功能规格与验收标准、版本规划）；
+> 修改 PRD 后用 `python3 scripts/prd2html.py` 重新生成 HTML 阅读版。
+
 ## 架构
 
 Finder Sync 扩展必须运行在 App Sandbox 里（系统强制），而沙箱内**不能启动子进程**，
@@ -218,6 +221,8 @@ FinderSync/                 # Finder Sync 扩展（仅渲染菜单 + 传话）
 Shared/                     # 两端共享：命令模型、JSON 存储、URL 协议、执行器、权限检查、个人信息、版本与更新
 scripts/build.sh            # 构建 + 重签 + 注入 commit/构建时间 + 安装到 /Applications
 scripts/release.sh          # 打 tag 并同步 GitHub / Gitee
+scripts/prd2html.py         # 把 docs/PRD.md 渲染成 docs/PRD.html（无第三方依赖）
+docs/PRD.md                 # 产品需求文档（唯一真相源）
 dist/                       # release.sh --build 产出的安装包（未纳入版本管理）
 scripts/app.entitlements    # 主 App：仅 App Groups（不沙箱）
 scripts/appex.entitlements  # 扩展：沙箱 + App Groups
