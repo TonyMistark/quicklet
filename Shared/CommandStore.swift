@@ -58,7 +58,7 @@ final class CommandStore: ObservableObject {
         do {
             commands = try JSONDecoder().decode([QuickletCommand].self, from: data)
         } catch {
-            NSLog("Quicklet: failed to decode commands.json: \(error)")
+            Diagnostics.log("failed to decode commands.json: \(error.localizedDescription)")
             commands = []
         }
     }
@@ -70,7 +70,7 @@ final class CommandStore: ObservableObject {
             let data = try encoder.encode(commands)
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            NSLog("Quicklet: failed to save commands.json: \(error)")
+            Diagnostics.log("failed to save commands.json: \(error.localizedDescription)")
         }
     }
 

@@ -59,6 +59,26 @@ open /Applications/Quicklet.app
 
 `~/Library/Group Containers/group.com.ice.quicklet/commands.json`
 
+## 诊断与崩溃收集
+
+菜单栏图标 → **诊断与日志…**，可以查看：
+
+- **运行日志**：每条命令展开后的脚本、退出码、stderr（两类进程分别标注 `[Quicklet]` / `[QuickletFinder]`）
+- **崩溃报告**：Quicklet 自己捕获的崩溃（含调用栈）+ 系统 `.ips` 报告入口
+- **异常退出提示**：上次如果没正常退出，会在窗口里标出
+
+文件位置（App Group 容器内，两端共享）：
+
+| 文件 | 说明 |
+| --- | --- |
+| `Logs/quicklet.log` | 滚动日志，超过 512 KB 自动轮转一份 `.1` |
+| `Logs/session.active` | 会话标记，正常退出/SIGTERM 会清除 |
+| `Crashes/crash-*.txt` | 未捕获异常（含完整调用栈）与崩溃信号（`SIGSEGV` 等）记录 |
+
+捕获范围：`NSSetUncaughtExceptionHandler` + `SIGABRT/SIGSEGV/SIGBUS/SIGILL/SIGFPE/SIGTRAP`。
+信号处理里只做 `write(2)`、`unlink(2)` 和栈回溯，避免崩溃时再崩；之后恢复默认处理，
+系统自身的 `.ips` 报告仍会正常生成。
+
 ## 已知限制 / Roadmap
 
 - [ ] 按选中类型（文件/文件夹）过滤菜单项

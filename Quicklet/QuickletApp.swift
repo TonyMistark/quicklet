@@ -12,6 +12,10 @@ struct QuickletApp: App {
             }
             .keyboardShortcut(",", modifiers: .command)
 
+            Button("诊断与日志…") {
+                appDelegate.showDiagnostics()
+            }
+
             Divider()
 
             Button("退出 Quicklet") {
@@ -27,7 +31,12 @@ struct QuickletApp: App {
 /// can actually spawn the shell.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
+    private var diagnosticsWindow: NSWindow?
     private var didHandleCommand = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        Diagnostics.install(processName: "Quicklet", tracksSession: true)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -40,9 +49,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        Diagnostics.markCleanExit()
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            guard let (commandID, paths) = CommandURL.parse(url) else { continue }
+            guard let (commandID, paths) = CommandURL.parse(url) else {
+                Diagnostics.log("ignored unparsable URL: \(url.absoluteString.prefix(200))")
+                continue
+            }
             didHandleCommand = true
             runCommand(id: commandID, paths: paths)
         }
@@ -52,13 +68,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let store = CommandStore.shared
         store.reloadFromDisk()
         guard let command = store.commands.first(where: { $0.id == id }) else {
-            NSLog("Quicklet: command %@ not found", id.uuidString)
+            Diagnostics.log("command \(id.uuidString) not found (config has \(store.commands.count) entries)")
             return
         }
         CommandRunner.run(command, paths: paths)
     }
 
-    // MARK: - Settings window
+    // MARK: - Windows
 
     @objc func showSettings() {
         if settingsWindow == nil {
@@ -77,5 +93,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc func showDiagnostics() {
+        if diagnosticsWindow == nil {
+            let hosting = NSHostingView(rootView: DiagnosticsView())
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Quicklet 诊断"
+            window.contentView = hosting
+            window.isReleasedWhenClosed = false
+            window.center()
+            diagnosticsWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        diagnosticsWindow?.makeKeyAndOrderFront(nil)
     }
 }

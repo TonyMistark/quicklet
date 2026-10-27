@@ -13,6 +13,7 @@ final class FinderSync: FIFinderSync {
 
     override init() {
         super.init()
+        Diagnostics.install(processName: "QuickletFinder", tracksSession: false)
         // Watch the whole filesystem so the menu is available everywhere.
         FIFinderSyncController.default().directoryURLs = [URL(fileURLWithPath: "/", isDirectory: true)]
     }
@@ -26,7 +27,11 @@ final class FinderSync: FIFinderSync {
 
         let menu = NSMenu(title: "Quicklet")
         let commands = store.commands.filter { $0.enabled && !$0.isBlank }
-        guard !commands.isEmpty else { return menu }
+        guard !commands.isEmpty else {
+            Diagnostics.log("menu requested but no enabled commands (total=\(store.commands.count))")
+            return menu
+        }
+        Diagnostics.log("menu built with \(commands.count) command(s), kind=\(menuKind.rawValue)")
 
         for (index, command) in commands.enumerated() {
             let item = NSMenuItem(
@@ -53,16 +58,16 @@ final class FinderSync: FIFinderSync {
         let paths = urls.map(\.path)
 
         guard let handoffURL = CommandURL.make(commandID: command.id, paths: paths) else {
-            NSLog("Quicklet: could not build hand-off URL for '%@'", command.name)
+            Diagnostics.log("could not build hand-off URL for '\(command.name)'")
             return
         }
+        Diagnostics.log("handing off '\(command.name)' with \(paths.count) path(s)")
 
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
         NSWorkspace.shared.open(handoffURL, configuration: configuration) { _, error in
             if let error {
-                NSLog("Quicklet: failed to hand command '%@' to app: %@",
-                      command.name, error.localizedDescription)
+                Diagnostics.log("hand-off failed for '\(command.name)': \(error.localizedDescription)")
             }
         }
     }
