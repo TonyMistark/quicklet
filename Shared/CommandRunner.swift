@@ -11,6 +11,7 @@ enum CommandRunner {
         static let allPaths = "{paths}"
         static let firstPath = "{path}"
         static let directory = "{dir}"
+        static let parentDirectory = "{parent}"
     }
 
     /// Runs `command` against `paths`. Returns false when the process
@@ -66,13 +67,26 @@ enum CommandRunner {
     static func expand(template: String, paths: [String]) -> String {
         let quoted = paths.map(\.shellQuoted)
         let firstURL = paths.first.map { URL(fileURLWithPath: $0) }
-        let directory = firstURL?.deletingLastPathComponent().path.shellQuoted ?? ""
+        let parentDirectory = firstURL?.deletingLastPathComponent().path.shellQuoted ?? ""
+
+        // {dir} is the folder a command should work in: the selection itself
+        // when a folder is selected, otherwise the folder containing the
+        // selection. Using the parent unconditionally sent "open in Terminal"
+        // one level up, which looked like it ignored the selection entirely.
+        let isFolder = firstURL.map { url in
+            var flag: ObjCBool = false
+            return FileManager.default.fileExists(atPath: url.path, isDirectory: &flag) && flag.boolValue
+        } ?? false
+        let workingDirectory = firstURL.map { url -> String in
+            (isFolder ? url.path : url.deletingLastPathComponent().path).shellQuoted
+        } ?? ""
 
         // Order matters: {paths} must be handled before {path}.
         let substitutions: [(token: String, value: String)] = [
             (Placeholder.allPaths, quoted.joined(separator: " ")),
+            (Placeholder.parentDirectory, parentDirectory),
             (Placeholder.firstPath, quoted.first ?? ""),
-            (Placeholder.directory, directory),
+            (Placeholder.directory, workingDirectory),
         ]
 
         var script = template

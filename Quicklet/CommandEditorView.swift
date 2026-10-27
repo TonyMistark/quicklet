@@ -76,7 +76,7 @@ struct CommandEditorView: View {
                                     .allowsHitTesting(false)
                             }
                         }
-                    Text("占位符：{paths} 全部选中路径 · {path} 第一个路径 · {dir} 所在目录")
+                    Text("占位符：{paths} 全部选中路径 · {path} 第一个路径 · {dir} 工作目录（选中文件夹即它本身）· {parent} 所在目录")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } header: {
