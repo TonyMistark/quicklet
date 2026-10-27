@@ -9,9 +9,13 @@ struct CommandEditorView: View {
 
     @State private var command: QuickletCommand
     private let isNew: Bool
+    private let allCommands: [QuickletCommand]
     private let completion: (Result) -> Void
 
     @State private var selectedIcon: String
+    @State private var isGrouped: Bool
+    @State private var group1: String
+    @State private var group2: String
     @Environment(\.dismiss) private var dismiss
 
     private let presetIcons = [
@@ -20,10 +24,19 @@ struct CommandEditorView: View {
         "square.and.arrow.up", "scissors", "tag", "wand.and.stars",
     ]
 
-    init(command: QuickletCommand, isNew: Bool, completion: @escaping (Result) -> Void) {
+    init(
+        command: QuickletCommand,
+        isNew: Bool,
+        allCommands: [QuickletCommand] = [],
+        completion: @escaping (Result) -> Void
+    ) {
         _command = State(initialValue: command)
         _selectedIcon = State(initialValue: command.icon)
+        _isGrouped = State(initialValue: !command.group.isEmpty)
+        _group1 = State(initialValue: command.group.first ?? "")
+        _group2 = State(initialValue: command.group.count > 1 ? command.group[1] : "")
         self.isNew = isNew
+        self.allCommands = allCommands
         self.completion = completion
     }
 
@@ -61,6 +74,28 @@ struct CommandEditorView: View {
                     }
                 } header: {
                     Text("图标（SF Symbol）")
+                }
+
+                Section {
+                    Picker("显示位置", selection: $isGrouped) {
+                        Text("右键第一层").tag(false)
+                        Text("Quicklet 菜单内").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+
+                    if isGrouped {
+                        groupField("一级分组", text: $group1, suggestions: firstLevelGroups)
+                        groupField("二级分组（可选）", text: $group2, suggestions: secondLevelGroups)
+                        Text("路径：Quicklet › \(pathPreview)")
+                            .font(.caption)
+                            .foregroundStyle(isGroupValid ? Color.secondary : Color.orange)
+                    } else {
+                        Text("直接出现在 Finder 右键菜单的第一层。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("菜单位置")
                 }
 
                 Section {
@@ -111,10 +146,11 @@ struct CommandEditorView: View {
 
                 Button(isNew ? "添加" : "存储") {
                     command.icon = selectedIcon
+                    command.group = resolvedGroup
                     completion(.saved(command))
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(command.isBlank)
+                .disabled(command.isBlank || !isGroupValid)
                 .buttonStyle(.borderedProminent)
             }
             .padding()
@@ -129,6 +165,76 @@ struct CommandEditorView: View {
             get: { command.promptTitle ?? "" },
             set: { command.promptTitle = $0.isEmpty ? nil : $0 }
         )
+    }
+
+    // MARK: - Grouping
+
+    private var trimmedGroup1: String {
+        group1.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedGroup2: String {
+        group2.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Group path written back to the model; a group needs a first level, and
+    /// leaving the section untouched keeps the command at the first level.
+    private var resolvedGroup: [String] {
+        guard isGrouped, !trimmedGroup1.isEmpty else { return [] }
+        return trimmedGroup2.isEmpty ? [trimmedGroup1] : [trimmedGroup1, trimmedGroup2]
+    }
+
+    private var isGroupValid: Bool {
+        !isGrouped || !trimmedGroup1.isEmpty
+    }
+
+    private var pathPreview: String {
+        guard !trimmedGroup1.isEmpty else { return "（先填写一级分组）" }
+        return trimmedGroup2.isEmpty ? trimmedGroup1 : "\(trimmedGroup1) › \(trimmedGroup2)"
+    }
+
+    /// Existing first-level group names, so the user can reuse instead of
+    /// retyping (a typo would silently create a second menu).
+    private var firstLevelGroups: [String] {
+        uniqueFirstLevel.sorted()
+    }
+
+    private var secondLevelGroups: [String] {
+        let parent = trimmedGroup1
+        guard !parent.isEmpty else { return [] }
+        let names = allCommands
+            .map(\.group)
+            .filter { $0.count > 1 && $0[0] == parent }
+            .map { $0[1] }
+        return Array(Set(names)).sorted()
+    }
+
+    private var uniqueFirstLevel: Set<String> {
+        Set(allCommands.map(\.group).compactMap(\.first))
+    }
+
+    private func groupField(
+        _ title: String,
+        text: Binding<String>,
+        suggestions: [String]
+    ) -> some View {
+        HStack(spacing: 8) {
+            TextField(title, text: text)
+                .textFieldStyle(.roundedBorder)
+            if !suggestions.isEmpty {
+                Menu {
+                    ForEach(suggestions, id: \.self) { name in
+                        Button(name) { text.wrappedValue = name }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("选择已有分组")
+            }
+        }
     }
 
     private var promptPlaceholderBinding: Binding<String> {

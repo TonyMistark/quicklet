@@ -33,26 +33,70 @@ final class FinderSync: FIFinderSync {
         }
         Diagnostics.log("menu built with \(commands.count) command(s), kind=\(menuKind.rawValue)")
 
-        for (index, command) in commands.enumerated() {
-            let item = NSMenuItem(
-                title: command.name,
-                action: #selector(runCommand(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.image = NSImage(systemSymbolName: command.icon, accessibilityDescription: command.name)
-            item.tag = index
-            menu.addItem(item)
+        let tree = MenuTree.build(from: commands)
+        Diagnostics.log("menu structure: \(MenuTree.describe(tree.root))")
+
+        // Ungrouped commands keep the original behaviour: first level of the
+        // Finder context menu.
+        for command in tree.topLevel {
+            menu.addItem(item(for: command))
         }
+
+        // The Quicklet submenu always exists - it is the app's fixed entry
+        // point and cannot be renamed or removed by the user.
+        menu.addItem(rootMenuItem(level: tree.root))
         return menu
+    }
+
+    private func rootMenuItem(level: MenuTree.Level) -> NSMenuItem {
+        let title = QuickletCommand.rootMenuTitle
+        let root = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        root.image = NSImage(systemSymbolName: "cursorarrow.click.2", accessibilityDescription: title)
+
+        let submenu = NSMenu(title: title)
+        populate(menu: submenu, level: level)
+
+        if submenu.items.isEmpty {
+            // Keep the entry visible (it is mandatory) but explain why it
+            // is empty.
+            let empty = NSMenuItem(title: "在 Quicklet 设置中添加分组命令", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            submenu.addItem(empty)
+        }
+
+        root.submenu = submenu
+        return root
+    }
+
+    /// Renders one tree level: its commands first, then one submenu per
+    /// child group.
+    private func populate(menu: NSMenu, level: MenuTree.Level) {
+        for command in level.commands {
+            menu.addItem(item(for: command))
+        }
+        for child in level.children {
+            let groupItem = NSMenuItem(title: child.name, action: nil, keyEquivalent: "")
+            groupItem.image = NSImage(systemSymbolName: "folder", accessibilityDescription: child.name)
+            let submenu = NSMenu(title: child.name)
+            populate(menu: submenu, level: child.level)
+            groupItem.submenu = submenu
+            menu.addItem(groupItem)
+        }
+    }
+
+    private func item(for command: QuickletCommand) -> NSMenuItem {
+        let item = NSMenuItem(title: command.name, action: #selector(runCommand(_:)), keyEquivalent: "")
+        item.target = self
+        item.image = NSImage(systemSymbolName: command.icon, accessibilityDescription: command.name)
+        item.representedObject = command.id
+        return item
     }
 
     // MARK: - Hand-off
 
     @objc private func runCommand(_ sender: NSMenuItem) {
-        let commands = store.commands.filter { $0.enabled && !$0.isBlank }
-        guard sender.tag >= 0, sender.tag < commands.count else { return }
-        let command = commands[sender.tag]
+        guard let id = sender.representedObject as? UUID,
+              let command = store.commands.first(where: { $0.id == id }) else { return }
 
         let controller = FIFinderSyncController.default()
         var urls = controller.selectedItemURLs() ?? []

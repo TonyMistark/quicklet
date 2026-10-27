@@ -101,6 +101,14 @@ final class CommandStore: ObservableObject {
                 promptTitle: "新建文件",
                 promptPlaceholder: "文件名，例如 notes.md"
             ),
+            // Grouped example: lives under Quicklet › 文件, demonstrating
+            // the submenu placement (the root menu itself is fixed).
+            QuickletCommand(
+                name: "复制路径",
+                icon: "doc.on.doc",
+                script: #"printf '%s\n' {paths} | pbcopy"#,
+                group: ["文件"]
+            ),
         ]
     }
 }

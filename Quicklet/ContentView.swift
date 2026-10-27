@@ -53,7 +53,8 @@ struct ContentView: View {
         .sheet(isPresented: $isShowingEditor) {
             CommandEditorView(
                 command: editingCommand ?? QuickletCommand(),
-                isNew: isEditingNew
+                isNew: isEditingNew,
+                allCommands: store.commands
             ) { result in
                 switch result {
                 case .saved(let command):
@@ -132,8 +133,17 @@ private struct CommandRow: View {
             Image(systemName: command.icon.isEmpty ? "questionmark" : command.icon)
                 .frame(width: 20)
                 .foregroundStyle(command.enabled ? Color.accentColor : Color.secondary)
-            Text(command.name.isEmpty ? "（未命名）" : command.name)
-                .strikethrough(!command.enabled)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(command.name.isEmpty ? "（未命名）" : command.name)
+                    .strikethrough(!command.enabled)
+                if command.isGrouped {
+                    Text(command.menuPath)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
             Spacer()
             if command.script.isEmpty {
                 Text("未设置命令")
@@ -159,6 +169,11 @@ private struct CommandDetail: View {
                 Text(command.name.isEmpty ? "（未命名）" : command.name)
                     .font(.title2.bold())
                 Spacer()
+            }
+
+            LabeledContent("菜单位置") {
+                Text(command.menuPath)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             LabeledContent("脚本") {
