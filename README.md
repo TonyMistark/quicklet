@@ -18,6 +18,28 @@ Finder 右键点击
 - 扩展每次弹出菜单都会重读配置，主 App 改完立即生效
 - 命令用 UUID 传递，两端读取同一份 JSON，id 一致
 
+## 权限（为什么之前每次执行都弹授权）
+
+命令是在主 App 里跑的，凡是访问桌面、文稿、下载、外置磁盘，macOS 都会按「App × 文件夹」逐次询问。
+弹窗反复出现通常是下面两个原因叠加：
+
+1. **同一份 App 有多个副本**。`quicklet://` 被几个 bundle 同时认领时，由哪个副本响应是随机的，
+   而每个副本的代码身份不同，macOS 会把它们当成不同的程序，之前记下的授权就不再生效。
+   检查当前有哪些副本在抢占：
+
+   ```sh
+   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -dump \
+     | awk '/^path:/{p=$0} /claimed schemes:.*quicklet:/{print p}'
+   ```
+
+   应当只有 `/Applications/Quicklet.app` 一条。多余的副本（build 产物、废纸篓里的旧版本）
+   用 `lsregister -u <路径>` 注销，或直接从废纸篓清掉。
+
+2. **没有完全磁盘访问权限**。授予一次之后，逐文件夹询问会被整体覆盖，不再弹窗。
+
+菜单栏图标 → **权限与安装…** 可以查看当前状态、一键跳到对应系统设置面板，并重启 App 让新授权生效
+（macOS 对单个进程缓存 TCC 决定，授权后必须重启）。
+
 ## 使用
 
 - 主 App 是菜单栏工具（`LSUIElement`，无 Dock 图标）：点菜单栏图标 → **Quicklet 设置…**
@@ -35,10 +57,12 @@ Finder 右键点击
 
 ```sh
 xcodegen generate        # 首次或修改 project.yml 后
-scripts/build.sh         # 构建 + 用本机开发证书重签
-cp -R build/Build/Products/Debug/Quicklet.app /Applications/
-open /Applications/Quicklet.app
+scripts/build.sh         # 构建 + 用本机开发证书重签 + 安装到 /Applications 并启动
 ```
+
+`scripts/build.sh` 会顺带做三件容易忘的事：杀掉旧实例、把 bundle 装到 `/Applications`、
+注销 build 产物与废纸篓旧副本的 `quicklet://` 注册（避免授权被多个副本打散）。
+不想自动安装可以设 `QUICKLET_INSTALL_DIR` 到别处或指向不可写路径。
 
 > 直接在 Xcode 里 ⌘B/⌘R 也可以，但需要在 Signing & Capabilities 里登录 Apple ID
 > （App Groups 在新系统上要求 provisioning profile）。`scripts/build.sh` 是绕过方案：
@@ -92,7 +116,7 @@ open /Applications/Quicklet.app
 project.yml                 # xcodegen 配置
 Quicklet/                   # 主 App（SwiftUI，菜单栏 + 设置窗口 + URL 处理）
 FinderSync/                 # Finder Sync 扩展（仅渲染菜单 + 传话）
-Shared/                     # 两端共享：命令模型、JSON 存储、URL 协议、执行器
+Shared/                     # 两端共享：命令模型、JSON 存储、URL 协议、执行器、权限检查
 scripts/build.sh            # 构建 + 重签脚本
 scripts/app.entitlements    # 主 App：仅 App Groups（不沙箱）
 scripts/appex.entitlements  # 扩展：沙箱 + App Groups

@@ -41,6 +41,11 @@ enum CommandRunner {
             }
             if !stderr.isEmpty {
                 message += " stderr=\(stderr.prefix(2000))"
+                // A denied folder access surfaces as a plain shell error, so
+                // point at the permission that fixes it.
+                if stderr.contains("Operation not permitted") || stderr.contains("Permission denied") {
+                    message += " | hint: folder access may be blocked - grant Full Disk Access"
+                }
             }
             Diagnostics.log(message)
         }

@@ -16,6 +16,10 @@ struct QuickletApp: App {
                 appDelegate.showDiagnostics()
             }
 
+            Button("权限与安装…") {
+                appDelegate.showPermissions()
+            }
+
             Divider()
 
             Button("退出 Quicklet") {
@@ -32,6 +36,7 @@ struct QuickletApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var diagnosticsWindow: NSWindow?
+    private var permissionsWindow: NSWindow?
     private var didHandleCommand = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -40,6 +45,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+
+        Diagnostics.log("bundle=\(Permissions.bundlePath) fullDiskAccess=\(Permissions.hasFullDiskAccess ? "granted" : "missing")")
+
+        // Commands that touch Desktop/Documents/Downloads are gated by macOS
+        // per-app consent; without Full Disk Access every invocation prompts.
+        if !Permissions.hasFullDiskAccess {
+            Diagnostics.log("warning: Full Disk Access not granted - folder access prompts will repeat")
+        }
 
         // A plain launch (double-click) should show the settings window,
         // but a launch triggered by the extension must stay invisible.
@@ -112,5 +125,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         diagnosticsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc func showPermissions() {
+        if permissionsWindow == nil {
+            let hosting = NSHostingView(rootView: PermissionsView())
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Quicklet 权限"
+            window.contentView = hosting
+            window.isReleasedWhenClosed = false
+            window.center()
+            permissionsWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        permissionsWindow?.makeKeyAndOrderFront(nil)
     }
 }
