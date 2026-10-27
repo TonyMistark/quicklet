@@ -31,10 +31,18 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: ""
         LSMinimumSystemVersion: "13.0"
+        # Menu bar agent: no Dock icon, no main window at launch.
+        LSUIElement: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.ice.quicklet.handoff
+            CFBundleURLSchemes:
+              - quicklet
     entitlements:
       path: Quicklet/Quicklet.entitlements
       properties:
-        com.apple.security.app-sandbox: true
+        # Intentionally NOT sandboxed: the extension is sandboxed (required
+        # by Finder Sync) and hands commands over so this app can spawn the
+        # shell and open other applications.
         com.apple.security.application-groups:
           - group.com.ice.quicklet
     settings:

@@ -15,7 +15,6 @@ cd "$(dirname "$0")/.."
 
 CERT="${QUICKLET_SIGN_CERT:-Apple Development}"
 TEAM="${QUICKLET_TEAM:-}"
-ENTITLEMENTS="scripts/resign.entitlements"
 DERIVED="${QUICKLET_BUILD_DIR:-build}"
 
 APP="$DERIVED/Build/Products/Debug/Quicklet.app"
@@ -25,8 +24,8 @@ APPEX="$APP/Contents/PlugIns/QuickletFinder.appex"
 #    sandboxed host environments; harmless in a normal terminal.
 #    CODE_SIGN_ENTITLEMENTS= skips entitlement embedding during the ad-hoc
 #    build: xcodebuild would otherwise demand a provisioning profile for
-#    the App Groups entitlement. The full entitlements (sandbox + app
-#    group) are embedded in the re-sign step below.
+#    the App Groups entitlement. The full entitlements are embedded in the
+#    re-sign step below.
 xcodebuild -project Quicklet.xcodeproj -scheme Quicklet \
   -configuration Debug -derivedDataPath "$DERIVED" build \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
@@ -34,8 +33,8 @@ xcodebuild -project Quicklet.xcodeproj -scheme Quicklet \
   ${TEAM:+DEVELOPMENT_TEAM=$TEAM} \
   OTHER_SWIFT_FLAGS='$(inherited) -disable-sandbox'
 
-# 2. Re-sign extension first, then the app bundle.
-codesign -f -s "$CERT" --entitlements "$ENTITLEMENTS" "$APPEX"
-codesign -f -s "$CERT" --entitlements "$ENTITLEMENTS" "$APP"
+# 2. Re-sign: extension (sandboxed) first, then the unsandboxed app bundle.
+codesign -f -s "$CERT" --entitlements scripts/appex.entitlements "$APPEX"
+codesign -f -s "$CERT" --entitlements scripts/app.entitlements "$APP"
 
 echo "Signed OK: $APP"

@@ -1,9 +1,13 @@
+import AppKit
 import FinderSync
 
 /// Finder Sync extension that appends user-defined commands to the
-/// Finder context menu. The command list is read from the shared
-/// App Group container, so edits made in the main app show up
-/// immediately (the list is re-read every time the menu is opened).
+/// Finder context menu.
+///
+/// Extensions run inside the App Sandbox, which forbids spawning child
+/// processes, so clicking an item does not execute the script here.
+/// Instead the selection is handed over to the main app via a
+/// `quicklet://run` URL; the unsandboxed app performs the execution.
 final class FinderSync: FIFinderSync {
     private let store = CommandStore()
 
@@ -18,7 +22,7 @@ final class FinderSync: FIFinderSync {
     override func menu(for menuKind: FIMenuKind) -> NSMenu {
         // Re-read the config on every menu invocation so that changes
         // from the main app are picked up without relaunching Finder.
-        store.load()
+        store.reloadFromDisk()
 
         let menu = NSMenu(title: "Quicklet")
         let commands = store.commands.filter { $0.enabled && !$0.isBlank }
@@ -38,7 +42,7 @@ final class FinderSync: FIFinderSync {
         return menu
     }
 
-    // MARK: - Execution
+    // MARK: - Hand-off
 
     @objc private func runCommand(_ sender: NSMenuItem) {
         let commands = store.commands.filter { $0.enabled && !$0.isBlank }
@@ -48,29 +52,18 @@ final class FinderSync: FIFinderSync {
         let urls = FIFinderSyncController.default().selectedItemURLs() ?? []
         let paths = urls.map(\.path)
 
-        var script = command.script
-        script = script.replacingOccurrences(of: "{paths}", with: paths.map(\.shellQuoted).joined(separator: " "))
-        script = script.replacingOccurrences(of: "{path}", with: paths.first?.shellQuoted ?? "")
-        script = script.replacingOccurrences(of: "{dir}", with: urls.first?.deletingLastPathComponent().path.shellQuoted ?? "")
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-c", script]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            NSLog("Quicklet: failed to run command '%@': %@", command.name, error.localizedDescription)
+        guard let handoffURL = CommandURL.make(commandID: command.id, paths: paths) else {
+            NSLog("Quicklet: could not build hand-off URL for '%@'", command.name)
+            return
         }
-    }
-}
 
-// MARK: - Helpers
-
-private extension String {
-    /// Single-quote a path so it is safe to embed in a shell command.
-    var shellQuoted: String {
-        "'" + replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        NSWorkspace.shared.open(handoffURL, configuration: configuration) { _, error in
+            if let error {
+                NSLog("Quicklet: failed to hand command '%@' to app: %@",
+                      command.name, error.localizedDescription)
+            }
+        }
     }
 }

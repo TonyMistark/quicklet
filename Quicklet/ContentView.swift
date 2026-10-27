@@ -3,7 +3,7 @@ import SwiftUI
 /// Main configuration window: lists all custom commands and allows
 /// adding, editing, deleting and toggling them.
 struct ContentView: View {
-    @StateObject private var store = CommandStore()
+    @ObservedObject var store: CommandStore
     @State private var editingCommand: QuickletCommand?
     @State private var isShowingEditor = false
     @State private var isEditingNew = false

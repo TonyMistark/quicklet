@@ -8,6 +8,9 @@ import Combine
 final class CommandStore: ObservableObject {
     static let appGroupID = "group.com.ice.quicklet"
 
+    /// Shared instance used by the main app (settings window + URL handler).
+    static let shared = CommandStore()
+
     @Published var commands: [QuickletCommand] = []
 
     /// Location of the JSON config. Prefers the App Group container and
@@ -45,7 +48,10 @@ final class CommandStore: ObservableObject {
     func load() {
         guard let data = try? Data(contentsOf: fileURL) else {
             if !FileManager.default.fileExists(atPath: fileURL.path) {
+                // Seed and persist immediately: the extension hands commands
+                // over by UUID, so both processes must see the same ids.
                 commands = Self.sampleCommands()
+                save()
             }
             return
         }
@@ -66,6 +72,13 @@ final class CommandStore: ObservableObject {
         } catch {
             NSLog("Quicklet: failed to save commands.json: \(error)")
         }
+    }
+
+    /// Re-reads the config from disk, replacing the in-memory list.
+    /// Used before resolving a command handed over from the extension,
+    /// so edits made in another process are always picked up.
+    func reloadFromDisk() {
+        load()
     }
 
     /// Seed commands shown on first launch.
