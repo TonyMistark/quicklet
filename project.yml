@@ -1,0 +1,68 @@
+name: Quicklet
+options:
+  bundleIdPrefix: com.ice
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    CODE_SIGN_IDENTITY: "-"
+
+targets:
+  Quicklet:
+    type: application
+    platform: macOS
+    sources:
+      - Quicklet
+      - Shared
+    dependencies:
+      - target: QuickletFinder
+        embed: true
+        codeSign: true
+        copy:
+          destination: plugins
+    info:
+      path: Quicklet/Info.plist
+      properties:
+        CFBundleDisplayName: Quicklet
+        CFBundleName: Quicklet
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: ""
+        LSMinimumSystemVersion: "13.0"
+    entitlements:
+      path: Quicklet/Quicklet.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - group.com.ice.quicklet
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ice.quicklet
+        GENERATE_INFOPLIST_FILE: false
+
+  QuickletFinder:
+    type: app-extension
+    platform: macOS
+    sources:
+      - FinderSync
+      - Shared
+    info:
+      path: FinderSync/Info.plist
+      properties:
+        CFBundleDisplayName: Quicklet Finder Extension
+        CFBundleName: QuickletFinder
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.FinderSync
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FinderSync
+    entitlements:
+      path: FinderSync/QuickletFinder.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - group.com.ice.quicklet
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ice.quicklet.findersync
+        GENERATE_INFOPLIST_FILE: false
