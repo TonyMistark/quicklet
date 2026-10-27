@@ -17,16 +17,14 @@ struct DiagnosticsView: View {
             Divider()
             crashSection
         }
-        .frame(minWidth: 680, minHeight: 480)
         .onAppear(perform: refresh)
     }
 
     // MARK: - Header
 
+    // The page title lives in the settings shell; this row is actions only.
     private var header: some View {
         HStack(spacing: 12) {
-            Label("诊断信息", systemImage: "stethoscope")
-                .font(.headline)
             Spacer()
             Button("刷新", action: refresh)
             Button("打开日志文件夹") {

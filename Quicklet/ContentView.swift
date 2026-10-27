@@ -1,54 +1,26 @@
 import SwiftUI
 
-/// Main configuration window: lists all custom commands and allows
-/// adding, editing, deleting and toggling them.
-struct ContentView: View {
+/// Command list plus detail pane. This is a page inside the settings window,
+/// so it uses a plain split instead of a NavigationSplitView: nesting a
+/// navigation stack inside an AppKit-hosted window adds a title bar we do not
+/// want.
+struct CommandsPage: View {
     @ObservedObject var store: CommandStore
+    @State private var selectedID: UUID?
     @State private var editingCommand: QuickletCommand?
     @State private var isShowingEditor = false
     @State private var isEditingNew = false
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach($store.commands) { $command in
-                    CommandRow(command: $command)
-                        .contentShape(Rectangle())
-                        .onTapGesture { startEditing(command) }
-                }
-                .onDelete { indexSet in
-                    store.commands.remove(atOffsets: indexSet)
-                }
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                listHeader
+                Divider()
+                list
             }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
-            .overlay {
-                if store.commands.isEmpty {
-                    Text("还没有自定义命令，点击 + 新建一个")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-        } detail: {
-            detailView
-        }
-        .navigationTitle("Quicklet")
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    startEditingNew()
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .help("新建命令")
-
-                Button(role: .destructive) {
-                    deleteSelected()
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .help("删除选中命令")
-                .disabled(selectedID == nil)
-            }
+            .frame(width: 236)
+            Divider()
+            detail
         }
         .sheet(isPresented: $isShowingEditor) {
             CommandEditorView(
@@ -67,9 +39,89 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Selection
+    // MARK: - List
 
-    @State private var selectedID: UUID?
+    private var listHeader: some View {
+        HStack(spacing: 4) {
+            Text("\(store.commands.count) 条命令")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                startEditingNew()
+            } label: {
+                Image(systemName: "plus")
+            }
+            .buttonStyle(.borderless)
+            .help("新建命令")
+
+            Button {
+                deleteSelected()
+            } label: {
+                Image(systemName: "minus")
+            }
+            .buttonStyle(.borderless)
+            .help("删除选中命令")
+            .disabled(selectedID == nil)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+    }
+
+    private var list: some View {
+        List(selection: $selectedID) {
+            ForEach($store.commands) { $command in
+                CommandRow(command: $command)
+                    .tag(command.id)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { startEditing(command) }
+                    .contextMenu {
+                        Button("编辑…") { startEditing(command) }
+                        Button("删除", role: .destructive) {
+                            store.commands.removeAll { $0.id == command.id }
+                        }
+                    }
+            }
+            .onDelete { indexSet in
+                store.commands.remove(atOffsets: indexSet)
+            }
+        }
+        .listStyle(.inset)
+        .overlay {
+            if store.commands.isEmpty {
+                Text("还没有自定义命令，点 + 新建一个")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding()
+            }
+        }
+    }
+
+    // MARK: - Detail
+
+    @ViewBuilder
+    private var detail: some View {
+        if let id = selectedID,
+           let command = store.commands.first(where: { $0.id == id }) {
+            CommandDetail(command: command) {
+                startEditing(command)
+            }
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "cursorarrow.click.2")
+                    .font(.system(size: 38))
+                    .foregroundStyle(.tertiary)
+                Text("选择左侧命令，或点 + 新建")
+                    .foregroundStyle(.secondary)
+                EnableExtensionHint()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding()
+        }
+    }
+
+    // MARK: - Actions
 
     private func startEditing(_ command: QuickletCommand) {
         selectedID = command.id
@@ -97,29 +149,8 @@ struct ContentView: View {
             store.commands[index] = command
         } else {
             store.commands.append(command)
-            selectedID = command.id
         }
-    }
-
-    // MARK: - Detail
-
-    @ViewBuilder
-    private var detailView: some View {
-        if let id = selectedID,
-           let command = store.commands.first(where: { $0.id == id }) {
-            CommandDetail(command: command)
-        } else {
-            VStack(spacing: 12) {
-                Image(systemName: "menubar.rectangle")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.tertiary)
-                Text("选择左侧命令，或点击 + 新建")
-                    .foregroundStyle(.secondary)
-                EnableExtensionHint()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding()
-        }
+        selectedID = command.id
     }
 }
 
@@ -159,38 +190,46 @@ private struct CommandRow: View {
 
 private struct CommandDetail: View {
     let command: QuickletCommand
+    let onEdit: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                Image(systemName: command.icon.isEmpty ? "questionmark" : command.icon)
-                    .font(.system(size: 28))
-                    .foregroundStyle(Color.accentColor)
-                Text(command.name.isEmpty ? "（未命名）" : command.name)
-                    .font(.title2.bold())
-                Spacer()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    Image(systemName: command.icon.isEmpty ? "questionmark" : command.icon)
+                        .font(.system(size: 28))
+                        .foregroundStyle(Color.accentColor)
+                    Text(command.name.isEmpty ? "（未命名）" : command.name)
+                        .font(.title2.bold())
+                    Spacer()
+                    Button("编辑…", action: onEdit)
+                }
+
+                LabeledContent("菜单位置") {
+                    Text(command.menuPath)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                LabeledContent("脚本") {
+                    Text(command.script.isEmpty ? "未设置" : command.script)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if command.needsInput {
+                    LabeledContent("执行前输入") {
+                        Text(command.promptTitle ?? "")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                Text("占位符：{paths} 全部选中路径 · {path} 第一个路径 · {dir} 工作目录（选中文件夹即它本身）· {parent} 所在目录 · {input} 输入框内容")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-
-            LabeledContent("菜单位置") {
-                Text(command.menuPath)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            LabeledContent("脚本") {
-                Text(command.script.isEmpty ? "未设置" : command.script)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            Text("在 Finder 脚本中可用占位符：{paths}（全部选中路径）、{path}（第一个路径）、{dir}（工作目录：选中文件夹时是它本身，选中文件时是所在目录）、{parent}（始终为所在目录）、{input}（输入框内容）")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Spacer()
+            .padding(20)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -206,9 +245,7 @@ struct EnableExtensionHint: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("打开系统设置") {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
-                    NSWorkspace.shared.open(url)
-                }
+                Permissions.openExtensionsSettings()
             }
             .controlSize(.small)
         }

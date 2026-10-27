@@ -43,8 +43,28 @@ Finder 右键点击
 ## 使用
 
 - 主 App 是菜单栏工具（`LSUIElement`，无 Dock 图标）：点菜单栏图标 → **Quicklet 设置…**
-- 设置窗口里增删命令：名称、SF Symbol 图标、Shell 模板、启用开关
 - 首次运行时若扩展没出现，去 **系统设置 → 通用 → 登录项与扩展 → 扩展 → 添加到 Finder** 勾选 Quicklet
+
+## 设置窗口
+
+单窗口侧栏结构（借鉴 wtmd）：
+
+```
+┌───────────────┬────────────────────────────┐
+│ ice  头像/昵称 │                            │
+│ 菜单          │   命令        列表 + 详情    │
+│   命令        │   个人信息    头像 + 昵称     │
+│ 维护          │   权限与安装  FDA 状态/重启   │
+│   权限与安装   │   诊断与日志  日志/崩溃报告   │
+│   诊断与日志   │   应用与更新  版本/检查更新   │
+│ 应用          │                            │
+│   应用与更新   │                            │
+└───────────────┴────────────────────────────┘
+```
+
+- **个人信息**：昵称 + 头像（任意格式，统一存 PNG），只存本机 App Group 容器，留空显示 macOS 账户名；侧栏顶部账户区即入口
+- **应用与更新**：版本号 / build / commit（构建时注入）/ 系统信息；**检查更新**按钮；GitHub 主源 + Gitee 备源并发查询，取版本更高者；有新版可一键「下载 → 校验 → 原子替换 /Applications → 重启」，任何一步失败旧版原封不动
+- 更新检查有节流：成功后 24h 内不再查，失败 1h 后重试；两个源都返回 404（还没发布过版本）视为「已是最新」而不是报错
 
 ## 系统要求
 
@@ -195,8 +215,8 @@ scripts/release.sh v1.0.0 --build  # 先构建，额外产出 dist/Quicklet-v1.0
 project.yml                 # xcodegen 配置
 Quicklet/                   # 主 App（SwiftUI，菜单栏 + 设置窗口 + URL 处理）
 FinderSync/                 # Finder Sync 扩展（仅渲染菜单 + 传话）
-Shared/                     # 两端共享：命令模型、JSON 存储、URL 协议、执行器、权限检查
-scripts/build.sh            # 构建 + 重签 + 安装到 /Applications
+Shared/                     # 两端共享：命令模型、JSON 存储、URL 协议、执行器、权限检查、个人信息、版本与更新
+scripts/build.sh            # 构建 + 重签 + 注入 commit/构建时间 + 安装到 /Applications
 scripts/release.sh          # 打 tag 并同步 GitHub / Gitee
 dist/                       # release.sh --build 产出的安装包（未纳入版本管理）
 scripts/app.entitlements    # 主 App：仅 App Groups（不沙箱）

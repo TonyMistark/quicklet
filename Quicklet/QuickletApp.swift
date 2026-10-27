@@ -12,15 +12,26 @@ struct QuickletApp: App {
             }
             .keyboardShortcut(",", modifiers: .command)
 
-            Button("诊断与日志…") {
-                appDelegate.showDiagnostics()
-            }
-
-            Button("权限与安装…") {
-                appDelegate.showPermissions()
+            Button("检查更新…") {
+                appDelegate.show(.about)
+                Task { await UpdateCenter.checker.check(force: true) }
             }
 
             Divider()
+
+            Button("权限与安装…") {
+                appDelegate.show(.permissions)
+            }
+
+            Button("诊断与日志…") {
+                appDelegate.show(.diagnostics)
+            }
+
+            Divider()
+
+            Button("关于 Quicklet") {
+                AboutPanel.show()
+            }
 
             Button("退出 Quicklet") {
                 NSApplication.shared.terminate(nil)
@@ -33,10 +44,12 @@ struct QuickletApp: App {
 /// Runs as a menu bar agent (LSUIElement). The Finder Sync extension hands
 /// commands over through a `quicklet://` URL; this app is unsandboxed so it
 /// can actually spawn the shell.
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// One window, several entry points: menu items switch the selected page.
     private var settingsWindow: NSWindow?
-    private var diagnosticsWindow: NSWindow?
-    private var permissionsWindow: NSWindow?
+    private let router = SettingsRouter()
+    private let profile = ProfileStore.shared
     private var didHandleCommand = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -46,7 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        Diagnostics.log("bundle=\(Permissions.bundlePath) fullDiskAccess=\(Permissions.hasFullDiskAccess ? "granted" : "missing")")
+        Diagnostics.log("""
+        bundle=\(Permissions.bundlePath) version=\(AppInfo.shortVersion) \
+        build=\(AppInfo.build) commit=\(AppInfo.commit ?? "-") \
+        fullDiskAccess=\(Permissions.hasFullDiskAccess ? "granted" : "missing")
+        """)
 
         // Commands that touch Desktop/Documents/Downloads are gated by macOS
         // per-app consent; without Full Disk Access every invocation prompts.
@@ -54,11 +71,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Diagnostics.log("warning: Full Disk Access not granted - folder access prompts will repeat")
         }
 
-        // A plain launch (double-click) should show the settings window,
-        // but a launch triggered by the extension must stay invisible.
+        // A plain launch (double-click) should show the settings window, but a
+        // launch triggered by the extension must stay invisible. The update
+        // check runs in the background either way and stays quiet on failure.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self, !self.didHandleCommand else { return }
-            self.showSettings()
+            guard let self else { return }
+            if !self.didHandleCommand {
+                self.showSettings()
+            }
+            Task { await UpdateCenter.checker.checkIfDue() }
         }
     }
 
@@ -129,59 +150,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Windows
 
     @objc func showSettings() {
+        show(router.tab)
+    }
+
+    @objc func showDiagnostics() {
+        show(.diagnostics)
+    }
+
+    @objc func showPermissions() {
+        show(.permissions)
+    }
+
+    /// Opens the settings window, switching it to `tab` when it is already up.
+    func show(_ tab: SettingsTab) {
         if settingsWindow == nil {
-            let hosting = NSHostingView(rootView: ContentView(store: .shared))
+            let shell = SettingsShell(router: router, store: .shared, profile: profile)
+            let hosting = NSHostingView(rootView: shell)
+            hosting.frame = NSRect(
+                x: 0, y: 0,
+                width: SettingsLayout.width,
+                height: SettingsLayout.height
+            )
+
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                contentRect: hosting.frame,
+                styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Quicklet 设置"
+            window.title = "Quicklet"
             window.contentView = hosting
             window.isReleasedWhenClosed = false
             window.center()
             settingsWindow = window
         }
+
+        router.open(tab)
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
-    }
-
-    @objc func showDiagnostics() {
-        if diagnosticsWindow == nil {
-            let hosting = NSHostingView(rootView: DiagnosticsView())
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "Quicklet 诊断"
-            window.contentView = hosting
-            window.isReleasedWhenClosed = false
-            window.center()
-            diagnosticsWindow = window
-        }
-        NSApp.activate(ignoringOtherApps: true)
-        diagnosticsWindow?.makeKeyAndOrderFront(nil)
-    }
-
-    @objc func showPermissions() {
-        if permissionsWindow == nil {
-            let hosting = NSHostingView(rootView: PermissionsView())
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "Quicklet 权限"
-            window.contentView = hosting
-            window.isReleasedWhenClosed = false
-            window.center()
-            permissionsWindow = window
-        }
-        NSApp.activate(ignoringOtherApps: true)
-        permissionsWindow?.makeKeyAndOrderFront(nil)
     }
 }

@@ -60,14 +60,13 @@ struct PermissionsView: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(minWidth: 620, minHeight: 460)
         .onAppear(perform: refresh)
     }
 
+    // The page title lives in the settings shell, so this is only the action
+    // row.
     private var header: some View {
         HStack(spacing: 10) {
-            Label("权限", systemImage: "lock.shield")
-                .font(.headline)
             Spacer()
             Button("刷新", action: refresh)
         }

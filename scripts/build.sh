@@ -28,12 +28,33 @@ LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchS
 #    build: xcodebuild would otherwise demand a provisioning profile for
 #    the App Groups entitlement. The full entitlements are embedded in the
 #    re-sign step below.
+#
+#    The previous product is removed first: its embedded extension still
+#    carries the developer certificate from the last re-sign, and an
+#    incremental ad-hoc build would fail with "embedded binary is not signed
+#    with the same certificate as the parent app".
+rm -rf "$APP"
 xcodebuild -project Quicklet.xcodeproj -scheme Quicklet \
   -configuration Debug -derivedDataPath "$DERIVED" build \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
   CODE_SIGN_ENTITLEMENTS= \
   ${TEAM:+DEVELOPMENT_TEAM=$TEAM} \
   OTHER_SWIFT_FLAGS='$(inherited) -disable-sandbox'
+
+# 1.5 Stamp build metadata into Info.plist so the about page can name the
+#     exact commit. This has to happen before re-signing: editing a plist
+#     inside a bundle invalidates its signature.
+PLIST="$APP/Contents/Info.plist"
+COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+  COMMIT="${COMMIT}-dirty"
+fi
+BUILD_DATE="$(date '+%Y-%m-%d %H:%M')"
+/usr/libexec/PlistBuddy -c "Delete :QuickletGitCommit" "$PLIST" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Add :QuickletGitCommit string $COMMIT" "$PLIST"
+/usr/libexec/PlistBuddy -c "Delete :QuickletBuildDate" "$PLIST" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Add :QuickletBuildDate string $BUILD_DATE" "$PLIST"
+echo "Stamped: commit=$COMMIT date=$BUILD_DATE"
 
 # 2. Re-sign: extension (sandboxed) first, then the unsandboxed app bundle.
 codesign -f -s "$CERT" --entitlements scripts/appex.entitlements "$APPEX"
@@ -62,7 +83,15 @@ fi
 #    that ended up in the Trash also claim it, and each copy has its own
 #    code identity, which is what makes macOS ask for folder access again
 #    and again. Unregister everything except the installed bundle.
-for stray in "$APP" "$HOME"/.Trash/Quicklet.app*; do
+#
+#    The Trash is listed with find instead of a glob: zsh aborts on an
+#    unmatched pattern, and there is usually nothing to match in there.
+strays=("$APP")
+while IFS= read -r candidate; do
+  [[ -n "$candidate" ]] && strays+=("$candidate")
+done < <(find "$HOME/.Trash" -maxdepth 1 -name 'Quicklet.app*' 2>/dev/null)
+
+for stray in "${strays[@]}"; do
   [[ -d "$stray" ]] || continue
   "$LSREGISTER" -u "$stray" >/dev/null 2>&1 || true
 done

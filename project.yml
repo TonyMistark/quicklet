@@ -9,6 +9,10 @@ settings:
   base:
     SWIFT_VERSION: "5.10"
     CODE_SIGN_IDENTITY: "-"
+    # Single source of truth for the version: Info.plist references these, and
+    # scripts/release.sh tags the same number.
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
 
 targets:
   Quicklet:
@@ -28,6 +32,8 @@ targets:
       properties:
         CFBundleDisplayName: Quicklet
         CFBundleName: Quicklet
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: ""
         LSMinimumSystemVersion: "13.0"
@@ -61,6 +67,8 @@ targets:
       properties:
         CFBundleDisplayName: Quicklet Finder Extension
         CFBundleName: QuickletFinder
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.FinderSync
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FinderSync
