@@ -57,7 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        // Regular app: shows a Dock icon and a cmd+tab entry. The menu bar
+        // extra remains as a second entry point.
+        NSApp.setActivationPolicy(.regular)
 
         Diagnostics.log("""
         bundle=\(Permissions.bundlePath) version=\(AppInfo.shortVersion) \
@@ -85,6 +87,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         Diagnostics.markCleanExit()
+    }
+
+    /// Clicking the Dock icon with no visible window reopens settings,
+    /// otherwise the icon would look dead after the user closes the window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            showSettings()
+        }
+        return true
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

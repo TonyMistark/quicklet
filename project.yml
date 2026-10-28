@@ -21,6 +21,7 @@ targets:
     sources:
       - Quicklet
       - Shared
+      - Resources
     dependencies:
       - target: QuickletFinder
         embed: true
@@ -36,9 +37,12 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: ""
+        NSHumanReadableDescription: "macOS Finder 右键菜单定制器"
         LSMinimumSystemVersion: "13.0"
-        # Menu bar agent: no Dock icon, no main window at launch.
-        LSUIElement: true
+        CFBundleIconFile: Quicklet
+        # Regular app: visible in the Dock and the cmd+tab switcher. The menu
+        # bar extra stays as a second entry point.
+        CFBundleTypeRole: viewer
         CFBundleURLTypes:
           - CFBundleURLName: com.ice.quicklet.handoff
             CFBundleURLSchemes:

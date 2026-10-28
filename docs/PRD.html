@@ -793,7 +793,8 @@ input[type=checkbox] { margin-right: 4px; }
 <tbody>
 <tr><td>失败时通知</td><td>开</td><td>关掉后只写日志</td></tr>
 <tr><td>完成通知（&gt; 3s）</td><td>开</td><td>—</td></tr>
-<tr><td>菜单栏图标</td><td>显示</td><td>关闭后仍驻留，靠 Dock 图标/快捷键进入设置</td></tr>
+<tr><td>Dock 图标</td><td>显示</td><td>常规 App 形态，⌘Tab 可见；关窗后点 Dock 图标重开设置</td></tr>
+<tr><td>菜单栏图标</td><td>显示</td><td>第二入口，与 Dock 并存</td></tr>
 <tr><td>第一层命令折叠阈值</td><td>8</td><td>0＝不折叠</td></tr>
 <tr><td>接收测试版更新</td><td>关</td><td>—</td></tr>
 <tr><td>输入内容写入日志</td><td>关</td><td>开启仅用于排障</td></tr>
@@ -813,6 +814,7 @@ input[type=checkbox] { margin-right: 4px; }
 <li><strong>F11-9 日志脱敏</strong>：输入内容不入日志。</li>
 <li><strong>F9 备份与恢复</strong>：<code>commands.bak.json</code> + 恢复入口 + 损坏不静默清空。</li>
 <li><strong>F3 补齐</strong>：<code>root</code> 档位、拖动排序、分组重命名。</li>
+<li><strong>产品形态</strong>：Dock 图标 + ⌘Tab 可见（弃用 LSUIElement），自定义 App 图标。</li>
 </ol>
 <p><strong>发布标准</strong>：E1–E7、F1–F5、I1–I2 全部通过；200 条命令下菜单 P95 ≤ 150 ms。</p>
 <h3 id="v120-可分享">v1.2.0 — 可分享</h3>
@@ -906,7 +908,7 @@ input[type=checkbox] { margin-right: 4px; }
        ├─ 读 commands.json（App Group）
        ├─ 构建 MenuTree → NSMenu
        └─ quicklet://run?id=&lt;UUID&gt;&amp;path=…（URL scheme 传话）
-            └─ Quicklet.app（非沙箱、菜单栏常驻）
+            └─ Quicklet.app（非沙箱、常驻后台，Dock + 菜单栏双入口）
                  ├─ 校验 id → 重新读盘
                  ├─ 需要输入 → NSAlert 取一行
                  └─ /bin/zsh 执行 → 日志</code></pre>

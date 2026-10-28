@@ -8,6 +8,8 @@
 	<string>Quicklet</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconFile</key>
+	<string>Quicklet</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -18,6 +20,8 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleTypeRole</key>
+	<string>viewer</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -35,9 +39,9 @@
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
-	<key>LSUIElement</key>
-	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
+	<key>NSHumanReadableDescription</key>
+	<string>macOS Finder 右键菜单定制器</string>
 </dict>
 </plist>

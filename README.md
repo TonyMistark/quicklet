@@ -45,7 +45,8 @@ Finder 右键点击
 
 ## 使用
 
-- 主 App 是菜单栏工具（`LSUIElement`，无 Dock 图标）：点菜单栏图标 → **Quicklet 设置…**
+- 主 App 是常驻工具：**Dock 图标 + 菜单栏图标双入口**。关掉设置窗口 App 仍在运行，
+  点 Dock 图标或菜单栏图标 → **Quicklet 设置…** 重新打开
 - 首次运行时若扩展没出现，去 **系统设置 → 通用 → 登录项与扩展 → 扩展 → 添加到 Finder** 勾选 Quicklet
 
 ## 设置窗口
@@ -221,6 +222,7 @@ FinderSync/                 # Finder Sync 扩展（仅渲染菜单 + 传话）
 Shared/                     # 两端共享：命令模型、JSON 存储、URL 协议、执行器、权限检查、个人信息、版本与更新
 scripts/build.sh            # 构建 + 重签 + 注入 commit/构建时间 + 安装到 /Applications
 scripts/release.sh          # 打 tag 并同步 GitHub / Gitee
+scripts/make_icon.swift     # 生成 App 图标（Resources/Quicklet.icns），改完重新编译运行即可
 scripts/prd2html.py         # 把 docs/PRD.md 渲染成 docs/PRD.html（无第三方依赖）
 docs/PRD.md                 # 产品需求文档（唯一真相源）
 dist/                       # release.sh --build 产出的安装包（未纳入版本管理）
