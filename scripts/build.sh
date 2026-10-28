@@ -70,7 +70,13 @@ if [[ -w "$INSTALL_DIR" ]]; then
   pkill -x Quicklet 2>/dev/null || true
   pkill -x QuickletFinder 2>/dev/null || true
   sleep 1
-  rm -rf "$INSTALL_DIR/Quicklet.app"
+  # Overwrite in place instead of replacing the bundle. Both `rm -rf` and
+  # `mv` on this path get rewritten into a move-to-Trash by some sandboxed
+  # hosts, which leaves a timestamped copy behind on every build. Those
+  # copies keep claiming quicklet:// with a different code identity, and
+  # once enough pile up Launch Services starts handing URLs to a copy that
+  # cannot run, so every command silently does nothing. ditto merges over
+  # the existing bundle and never creates a stray.
   ditto "$APP" "$INSTALL_DIR/Quicklet.app"
   "$LSREGISTER" -f -R "$INSTALL_DIR/Quicklet.app" >/dev/null 2>&1 || true
   open "$INSTALL_DIR/Quicklet.app"
@@ -86,12 +92,14 @@ fi
 #
 #    The Trash is listed with find instead of a glob: zsh aborts on an
 #    unmatched pattern, and there is usually nothing to match in there.
-strays=("$APP")
-while IFS= read -r candidate; do
-  [[ -n "$candidate" ]] && strays+=("$candidate")
-done < <(find "$HOME/.Trash" -maxdepth 1 -name 'Quicklet.app*' 2>/dev/null)
-
-for stray in "${strays[@]}"; do
-  [[ -d "$stray" ]] || continue
+#    Claims are enumerated from Launch Services instead of the filesystem:
+#    the Trash is unreadable from a sandboxed host, so a find-based sweep
+#    never matches anything and the strays keep their registration forever.
+#    Unregistering a path does not require read access to it.
+while IFS= read -r stray; do
+  [[ -z "$stray" ]] && continue
+  [[ "$stray" == "$INSTALL_DIR/Quicklet.app" ]] && continue
   "$LSREGISTER" -u "$stray" >/dev/null 2>&1 || true
-done
+done < <("$LSREGISTER" -dump 2>/dev/null \
+  | grep -E '^path:.*[Qq]uicklet' \
+  | sed -e 's/^path:[[:space:]]*//' -e 's/[[:space:]]*(0x[0-9a-f]*)$//')
