@@ -82,3 +82,16 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ice.quicklet.findersync
         GENERATE_INFOPLIST_FILE: false
+
+  UIRender:
+    type: tool
+    platform: macOS
+    sources:
+      - UIRender
+      - path: Quicklet
+        excludes:
+          - "QuickletApp.swift"
+      - Shared
+    settings:
+      base:
+        OTHER_SWIFT_FLAGS: "$(inherited) -disable-sandbox"

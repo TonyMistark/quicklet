@@ -4,12 +4,13 @@ import SwiftUI
 /// so it uses a plain split instead of a NavigationSplitView: nesting a
 /// navigation stack inside an AppKit-hosted window adds a title bar we do not
 /// want.
+///
+/// The detail pane IS the editor: selecting a command shows its editable form
+/// right away, and every change autosaves through the store's debounced write.
+/// There is no modal editor - "+" creates a disabled draft instead.
 struct CommandsPage: View {
     @ObservedObject var store: CommandStore
     @State private var selectedID: UUID?
-    @State private var editingCommand: QuickletCommand?
-    @State private var isShowingEditor = false
-    @State private var isEditingNew = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -22,19 +23,10 @@ struct CommandsPage: View {
             Divider()
             detail
         }
-        .sheet(isPresented: $isShowingEditor) {
-            CommandEditorView(
-                command: editingCommand ?? QuickletCommand(),
-                isNew: isEditingNew,
-                allCommands: store.commands
-            ) { result in
-                switch result {
-                case .saved(let command):
-                    saveCommand(command)
-                case .cancelled:
-                    break
-                }
-                isShowingEditor = false
+        .onAppear {
+            // Show something editable right away instead of an empty pane.
+            if selectedID == nil {
+                selectedID = store.commands.first?.id
             }
         }
     }
@@ -48,7 +40,7 @@ struct CommandsPage: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Button {
-                startEditingNew()
+                addDraft()
             } label: {
                 Image(systemName: "plus")
             }
@@ -73,10 +65,7 @@ struct CommandsPage: View {
             ForEach($store.commands) { $command in
                 CommandRow(command: $command)
                     .tag(command.id)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { startEditing(command) }
                     .contextMenu {
-                        Button("编辑…") { startEditing(command) }
                         Button("删除", role: .destructive) {
                             store.commands.removeAll { $0.id == command.id }
                         }
@@ -103,10 +92,8 @@ struct CommandsPage: View {
     @ViewBuilder
     private var detail: some View {
         if let id = selectedID,
-           let command = store.commands.first(where: { $0.id == id }) {
-            CommandDetail(command: command) {
-                startEditing(command)
-            }
+           let index = store.commands.firstIndex(where: { $0.id == id }) {
+            CommandInspector(command: $store.commands[index], allCommands: store.commands)
         } else {
             VStack(spacing: 12) {
                 Image(systemName: "cursorarrow.click.2")
@@ -114,6 +101,9 @@ struct CommandsPage: View {
                     .foregroundStyle(.tertiary)
                 Text("选择左侧命令，或点 + 新建")
                     .foregroundStyle(.secondary)
+                Text("选中后直接在这里编辑，修改会自动保存")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
                 EnableExtensionHint()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -123,18 +113,13 @@ struct CommandsPage: View {
 
     // MARK: - Actions
 
-    private func startEditing(_ command: QuickletCommand) {
-        selectedID = command.id
-        editingCommand = command
-        isEditingNew = false
-        isShowingEditor = true
-    }
-
-    private func startEditingNew() {
-        selectedID = nil
-        editingCommand = QuickletCommand()
-        isEditingNew = true
-        isShowingEditor = true
+    /// Creates a disabled draft and selects it, so the inspector opens on a
+    /// blank form instead of a modal. Disabled drafts never reach the menu.
+    private func addDraft() {
+        var draft = QuickletCommand()
+        draft.enabled = false
+        store.commands.append(draft)
+        selectedID = draft.id
     }
 
     private func deleteSelected() {
@@ -142,15 +127,6 @@ struct CommandsPage: View {
               let index = store.commands.firstIndex(where: { $0.id == id }) else { return }
         store.commands.remove(at: index)
         selectedID = nil
-    }
-
-    private func saveCommand(_ command: QuickletCommand) {
-        if let index = store.commands.firstIndex(where: { $0.id == command.id }) {
-            store.commands[index] = command
-        } else {
-            store.commands.append(command)
-        }
-        selectedID = command.id
     }
 }
 
@@ -186,49 +162,289 @@ private struct CommandRow: View {
     }
 }
 
-// MARK: - Detail pane
+// MARK: - Inspector
 
-private struct CommandDetail: View {
-    let command: QuickletCommand
-    let onEdit: () -> Void
+/// Inline editor shown in the detail pane. Fields bind straight to the store,
+/// so edits autosave (the store debounces writes); no Save/Cancel step.
+struct CommandInspector: View {
+    @Binding var command: QuickletCommand
+    let allCommands: [QuickletCommand]
+
+    // Group fields need local state because the model stores one path array
+    // while the UI edits two levels; they re-sync when the selection changes.
+    @State private var isGrouped: Bool
+    @State private var group1: String
+    @State private var group2: String
+
+    private let presetIcons = [
+        "terminal", "chevron.left.forwardslash.chevron.right", "folder",
+        "doc.text", "link", "photo", "archivebox", "trash",
+        "square.and.arrow.up", "scissors", "tag", "wand.and.stars",
+    ]
+
+    init(command: Binding<QuickletCommand>, allCommands: [QuickletCommand]) {
+        _command = command
+        self.allCommands = allCommands
+        _isGrouped = State(initialValue: !command.wrappedValue.group.isEmpty)
+        _group1 = State(initialValue: command.wrappedValue.group.first ?? "")
+        _group2 = State(initialValue: command.wrappedValue.group.count > 1 ? command.wrappedValue.group[1] : "")
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
-                    Image(systemName: command.icon.isEmpty ? "questionmark" : command.icon)
-                        .font(.system(size: 28))
-                        .foregroundStyle(Color.accentColor)
-                    Text(command.name.isEmpty ? "（未命名）" : command.name)
-                        .font(.title2.bold())
-                    Spacer()
-                    Button("编辑…", action: onEdit)
-                }
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                iconSection
+                placementSection
+                scriptSection
+                promptSection
+            }
+            .padding(20)
+        }
+        .onChange(of: command.id) { _ in syncGroupStates() }
+    }
 
-                LabeledContent("菜单位置") {
-                    Text(command.menuPath)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+    // MARK: Header
 
-                LabeledContent("脚本") {
-                    Text(command.script.isEmpty ? "未设置" : command.script)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+    private var header: some View {
+        HStack(spacing: 12) {
+            Image(systemName: command.icon.isEmpty ? "questionmark" : command.icon)
+                .font(.system(size: 24))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 30)
+            TextField("名称", text: $command.name)
+                .textFieldStyle(.plain)
+                .font(.title2.bold())
+            Toggle("已启用", isOn: $command.enabled)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+        }
+    }
 
-                if command.needsInput {
-                    LabeledContent("执行前输入") {
-                        Text(command.promptTitle ?? "")
-                            .frame(maxWidth: .infinity, alignment: .leading)
+    // MARK: Icon
+
+    private var iconSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("图标（SF Symbol）")
+            HStack(spacing: 12) {
+                Image(systemName: command.icon.isEmpty ? "questionmark" : command.icon)
+                    .frame(width: 24)
+                    .foregroundStyle(Color.accentColor)
+                TextField("SF Symbol 名称", text: $command.icon)
+                    .textFieldStyle(.roundedBorder)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(presetIcons, id: \.self) { name in
+                        Button {
+                            command.icon = name
+                        } label: {
+                            Image(systemName: name)
+                                .frame(width: 30, height: 26)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(command.icon == name ? .accentColor : .primary)
                     }
                 }
+            }
+        }
+    }
 
-                Text("占位符：{paths} 全部选中路径 · {path} 第一个路径 · {dir} 工作目录（选中文件夹即它本身）· {parent} 所在目录 · {input} 输入框内容")
+    // MARK: Placement
+
+    private var placementSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("菜单位置")
+            Picker("显示位置", selection: $isGrouped) {
+                Text("右键第一层").tag(false)
+                Text("Quicklet 菜单内").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .onChange(of: isGrouped) { _ in applyGroup() }
+
+            if isGrouped {
+                HStack(spacing: 8) {
+                    groupField("一级分组", text: $group1, suggestions: firstLevelGroups)
+                    groupField("二级分组（可选）", text: $group2, suggestions: secondLevelGroups)
+                }
+                Text("路径：Quicklet › \(pathPreview)")
+                    .font(.caption)
+                    .foregroundStyle(isGroupValid ? Color.secondary : Color.orange)
+            } else {
+                Text("直接出现在 Finder 右键菜单的第一层。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .padding(20)
+        }
+    }
+
+    // MARK: Script
+
+    private var scriptSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Shell 命令模板")
+            TextEditor(text: $command.script)
+                .font(.system(.body, design: .monospaced))
+                .frame(height: 110)
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(Color.primary.opacity(0.12))
+                )
+                .overlay(alignment: .topLeading) {
+                    if command.script.isEmpty {
+                        Text(#"例如：open -a Terminal "{dir}""#)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 12)
+                            .padding(.leading, 10)
+                            .allowsHitTesting(false)
+                    }
+                }
+            HStack(spacing: 6) {
+                ForEach(["{paths}", "{path}", "{dir}", "{parent}", "{input}"], id: \.self) { token in
+                    Text(token)
+                        .font(.caption.monospaced())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 4))
+                        .help(tokenHelp(token))
+                }
+                Spacer()
+                Text("路径自动转义，\"{dir}\" 不会双重引号")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func tokenHelp(_ token: String) -> String {
+        switch token {
+        case "{paths}": return "全部选中路径"
+        case "{path}": return "第一个选中路径"
+        case "{dir}": return "工作目录：选中文件夹即它本身"
+        case "{parent}": return "所在目录"
+        case "{input}": return "执行前输入框的内容"
+        default: return token
+        }
+    }
+
+    // MARK: Prompt
+
+    private var promptSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("执行前输入（可选）")
+            TextField("输入框标题（留空则不弹输入框）", text: promptTitleBinding)
+                .textFieldStyle(.roundedBorder)
+            TextField("输入框占位提示，例如：文件名，如 notes.md", text: promptPlaceholderBinding)
+                .textFieldStyle(.roundedBorder)
+            Text("填写标题后，命令执行前会弹出输入框；输入内容在模板中用 {input} 引用（自动 shell 转义）。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // Optional prompt fields map to nil when the text field is empty, so a
+    // command keeps "no prompt" semantics until a title is typed.
+    private var promptTitleBinding: Binding<String> {
+        Binding(
+            get: { command.promptTitle ?? "" },
+            set: { command.promptTitle = $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    private var promptPlaceholderBinding: Binding<String> {
+        Binding(
+            get: { command.promptPlaceholder ?? "" },
+            set: { command.promptPlaceholder = $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    // MARK: Grouping
+
+    private func sectionTitle(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.tertiary)
+    }
+
+    private func syncGroupStates() {
+        isGrouped = !command.group.isEmpty
+        group1 = command.group.first ?? ""
+        group2 = command.group.count > 1 ? command.group[1] : ""
+    }
+
+    /// Writes the two local group fields back to the model's path array.
+    private func applyGroup() {
+        let first = group1.trimmingCharacters(in: .whitespacesAndNewlines)
+        let second = group2.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isGrouped, !first.isEmpty else {
+            command.group = []
+            return
+        }
+        command.group = second.isEmpty ? [first] : [first, second]
+    }
+
+    private var trimmedGroup1: String {
+        group1.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedGroup2: String {
+        group2.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isGroupValid: Bool {
+        !isGrouped || !trimmedGroup1.isEmpty
+    }
+
+    private var pathPreview: String {
+        guard !trimmedGroup1.isEmpty else { return "（先填写一级分组）" }
+        return trimmedGroup2.isEmpty ? trimmedGroup1 : "\(trimmedGroup1) › \(trimmedGroup2)"
+    }
+
+    /// Existing first-level group names, so the user can reuse instead of
+    /// retyping (a typo would silently create a second menu).
+    private var firstLevelGroups: [String] {
+        Set(allCommands.map(\.group).compactMap(\.first)).sorted()
+    }
+
+    private var secondLevelGroups: [String] {
+        let parent = trimmedGroup1
+        guard !parent.isEmpty else { return [] }
+        let names = allCommands
+            .map(\.group)
+            .filter { $0.count > 1 && $0[0] == parent }
+            .map { $0[1] }
+        return Array(Set(names)).sorted()
+    }
+
+    private func groupField(
+        _ title: String,
+        text: Binding<String>,
+        suggestions: [String]
+    ) -> some View {
+        HStack(spacing: 6) {
+            TextField(title, text: text)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: text.wrappedValue) { _ in applyGroup() }
+            if !suggestions.isEmpty {
+                Menu {
+                    ForEach(suggestions, id: \.self) { name in
+                        Button(name) {
+                            text.wrappedValue = name
+                            applyGroup()
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("选择已有分组")
+            }
         }
     }
 }
