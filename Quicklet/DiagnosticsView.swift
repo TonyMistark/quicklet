@@ -45,7 +45,7 @@ struct DiagnosticsView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("运行日志").font(.subheadline.bold())
-                Text(Diagnostics.logFileURL.path)
+                Text(Diagnostics.logFileURL.abbreviatedPath)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

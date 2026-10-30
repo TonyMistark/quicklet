@@ -177,7 +177,7 @@ struct AboutSettingsView: View {
     private var dataSection: some View {
         Section("配置") {
             LabeledContent("命令配置") {
-                Text(CommandStore.defaultFileURL.path)
+                Text(CommandStore.defaultFileURL.abbreviatedPath)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
