@@ -11,8 +11,8 @@ settings:
     CODE_SIGN_IDENTITY: "-"
     # Single source of truth for the version: Info.plist references these, and
     # scripts/release.sh tags the same number.
-    MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0.1"
+    CURRENT_PROJECT_VERSION: "2"
 
 targets:
   Quicklet:

@@ -47,8 +47,21 @@ if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
   exit 1
 fi
 
-plist_version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Quicklet/Info.plist 2>/dev/null || echo "?")
-echo "==> releasing $VERSION (bundle version $plist_version, branch $branch)"
+# The tag has to match the bundle version. The update checker compares
+# CFBundleShortVersionString against the published version, so a mismatch
+# ships an app that keeps offering an update it is already running.
+project_version=$(awk '/MARKETING_VERSION:/ { gsub(/"/, ""); print $2; exit }' project.yml)
+if [[ -z "$project_version" ]]; then
+  echo "error: could not read MARKETING_VERSION from project.yml" >&2
+  exit 1
+fi
+if [[ "$VERSION" != "v$project_version" ]]; then
+  echo "error: tag $VERSION does not match MARKETING_VERSION $project_version" >&2
+  echo "       bump MARKETING_VERSION and CURRENT_PROJECT_VERSION in project.yml first" >&2
+  exit 1
+fi
+
+echo "==> releasing $VERSION (bundle version $project_version, branch $branch)"
 
 # --- Optional build --------------------------------------------------------
 if $BUILD; then
