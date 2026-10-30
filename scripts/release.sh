@@ -55,6 +55,9 @@ if $BUILD; then
   echo "==> building"
   ./scripts/build.sh
   mkdir -p dist
+  # Same reason as build/: an .app under the home directory is indexed as a
+  # second installed copy of the app.
+  : > dist/.metadata_never_index
   rm -f "dist/Quicklet-$VERSION.zip"
   ditto -c -k --sequesterRsrc --keepParent /Applications/Quicklet.app "dist/Quicklet-$VERSION.zip"
   echo "    artifact: dist/Quicklet-$VERSION.zip"

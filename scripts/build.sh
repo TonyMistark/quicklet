@@ -15,7 +15,7 @@ cd "$(dirname "$0")/.."
 
 CERT="${QUICKLET_SIGN_CERT:-Apple Development}"
 TEAM="${QUICKLET_TEAM:-}"
-DERIVED="${QUICKLET_BUILD_DIR:-build}"
+DERIVED="${QUICKLET_BUILD_DIR:-.build}"
 
 APP="$DERIVED/Build/Products/Debug/Quicklet.app"
 APPEX="$APP/Contents/PlugIns/QuickletFinder.appex"
@@ -61,6 +61,12 @@ codesign -f -s "$CERT" --entitlements scripts/appex.entitlements "$APPEX"
 codesign -f -s "$CERT" --entitlements scripts/app.entitlements "$APP"
 
 echo "Signed OK: $APP"
+
+# Kick the build directory out of the Spotlight index. Without this the
+# build product is picked up as a second installed app, so Spotlight and
+# Launchpad show Quicklet twice: once from /Applications and once from
+# here. The empty marker file is the same trick wtmd uses.
+: > "$DERIVED/.metadata_never_index"
 
 # 3. Install. Leaving a second copy in the build directory lets Launch
 #    Services hand quicklet:// URLs to either copy; macOS then sees a
