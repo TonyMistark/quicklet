@@ -11,6 +11,15 @@ import FinderSync
 final class FinderSync: FIFinderSync {
     private let store = CommandStore()
 
+    /// Commands shown in the menu currently on screen, in tag order.
+    ///
+    /// Finder does not keep the NSMenuItem instances built here: on click the
+    /// action receives a fresh copy whose only surviving payload is the tag
+    /// (besides title/action/image/enabled - representedObject is dropped,
+    /// per Apple's own response in FB#39073387). The tag is an index into
+    /// this array, which is rebuilt synchronously with each menu.
+    private var menuCommands: [QuickletCommand] = []
+
     override init() {
         super.init()
         Diagnostics.install(processName: "QuickletFinder", tracksSession: false)
@@ -32,6 +41,9 @@ final class FinderSync: FIFinderSync {
             return menu
         }
         Diagnostics.log("menu built with \(commands.count) command(s), kind=\(menuKind.rawValue)")
+
+        // Tags index into this snapshot; rebuild it in step with the menu.
+        menuCommands = []
 
         let tree = MenuTree.build(from: commands)
         Diagnostics.log("menu structure: \(MenuTree.describe(tree.root))")
@@ -88,26 +100,30 @@ final class FinderSync: FIFinderSync {
         let item = NSMenuItem(title: command.name, action: #selector(runCommand(_:)), keyEquivalent: "")
         item.target = self
         item.image = NSImage(systemSymbolName: command.icon, accessibilityDescription: command.name)
-        // The menu travels between the extension and Finder and back, so
-        // representedObject must survive a round-trip. Only property-list
-        // types do: a UUID object arrives as nil on the way back, which
-        // silently swallowed every click. Ship the UUID as a string.
-        item.representedObject = command.id.uuidString
+        // representedObject never survives the trip to Finder and back, so
+        // the command is identified by its tag: an index into menuCommands.
+        item.tag = menuCommands.count
+        menuCommands.append(command)
         return item
     }
 
     // MARK: - Hand-off
 
     @objc private func runCommand(_ sender: NSMenuItem) {
-        Diagnostics.log("menu item clicked: '\(sender.title)'")
+        Diagnostics.log("menu item clicked: '\(sender.title)' tag=\(sender.tag)")
 
-        guard let idString = sender.representedObject as? String,
-              let id = UUID(uuidString: idString) else {
-            Diagnostics.log("representedObject is not a UUID string: \(String(describing: sender.representedObject))")
-            return
+        let command: QuickletCommand?
+        if sender.tag >= 0, sender.tag < menuCommands.count {
+            command = menuCommands[sender.tag]
+        } else {
+            // Finder is expected to deliver the tag we set, but it hands us
+            // a different NSMenuItem instance, so match by title as a last
+            // resort instead of dropping the click.
+            command = menuCommands.first { $0.name == sender.title }
+            Diagnostics.log("tag \(sender.tag) out of range, fell back to title match")
         }
-        guard let command = store.commands.first(where: { $0.id == id }) else {
-            Diagnostics.log("command \(id) not found in store (\(store.commands.count) loaded)")
+        guard let command else {
+            Diagnostics.log("no command for clicked item (tag=\(sender.tag), title='\(sender.title)', menuCommands=\(menuCommands.count))")
             return
         }
 
