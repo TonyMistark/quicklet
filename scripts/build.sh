@@ -33,6 +33,14 @@ LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchS
 #    carries the developer certificate from the last re-sign, and an
 #    incremental ad-hoc build would fail with "embedded binary is not signed
 #    with the same certificate as the parent app".
+# The .xcodeproj is generated and not committed, so refresh it every time:
+# a stale project keeps the previous MARKETING_VERSION and the build then
+# ships with the wrong bundle version (tag v1.0.1 with a 1.0.0 binary means
+# the update checker keeps offering an update that is already installed).
+if command -v xcodegen >/dev/null 2>&1; then
+  xcodegen generate >/dev/null
+fi
+
 rm -rf "$APP"
 xcodebuild -project Quicklet.xcodeproj -scheme Quicklet \
   -configuration Debug -derivedDataPath "$DERIVED" build \
