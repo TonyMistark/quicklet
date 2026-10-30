@@ -67,12 +67,26 @@ echo "==> releasing $VERSION (bundle version $project_version, branch $branch)"
 if $BUILD; then
   echo "==> building"
   ./scripts/build.sh
+  # Package the bundle that was just built, not the installed one: with
+  # QUICKLET_SKIP_INSTALL=1 the copy in /Applications is an older version on
+  # purpose, and zipping that ships a release whose asset disagrees with its
+  # own tag - the app then downloads it and refuses to install it.
+  built_app="${QUICKLET_BUILD_DIR:-.build}/Build/Products/Debug/Quicklet.app"
+  if [[ ! -d "$built_app" ]]; then
+    echo "error: build product not found at $built_app" >&2
+    exit 1
+  fi
+  built_version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$built_app/Contents/Info.plist" 2>/dev/null || echo "?")
+  if [[ "$built_version" != "$project_version" ]]; then
+    echo "error: built bundle is $built_version, expected $project_version" >&2
+    exit 1
+  fi
   mkdir -p dist
   # Same reason as build/: an .app under the home directory is indexed as a
   # second installed copy of the app.
   : > dist/.metadata_never_index
   rm -f "dist/Quicklet-$VERSION.zip"
-  ditto -c -k --sequesterRsrc --keepParent /Applications/Quicklet.app "dist/Quicklet-$VERSION.zip"
+  ditto -c -k --sequesterRsrc --keepParent "$built_app" "dist/Quicklet-$VERSION.zip"
   echo "    artifact: dist/Quicklet-$VERSION.zip"
 fi
 

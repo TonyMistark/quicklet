@@ -20,6 +20,10 @@ DERIVED="${QUICKLET_BUILD_DIR:-.build}"
 APP="$DERIVED/Build/Products/Debug/Quicklet.app"
 APPEX="$APP/Contents/PlugIns/QuickletFinder.appex"
 INSTALL_DIR="${QUICKLET_INSTALL_DIR:-/Applications}"
+# Set to 1 to build and sign without touching the installed copy. Used when
+# testing the in-app updater: the running app has to stay on the old version
+# so it can find, download and install the new one by itself.
+SKIP_INSTALL="${QUICKLET_SKIP_INSTALL:-0}"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 # 1. Build (ad-hoc). -disable-sandbox is required when building from
@@ -80,7 +84,9 @@ echo "Signed OK: $APP"
 #    Services hand quicklet:// URLs to either copy; macOS then sees a
 #    different code identity depending on which one answers and drops the
 #    saved privacy grants, so every command asks for folder access again.
-if [[ -w "$INSTALL_DIR" ]]; then
+if [[ "$SKIP_INSTALL" == "1" ]]; then
+  echo "Skipped install (QUICKLET_SKIP_INSTALL=1), product left at: $APP"
+elif [[ -w "$INSTALL_DIR" ]]; then
   pkill -x Quicklet 2>/dev/null || true
   pkill -x QuickletFinder 2>/dev/null || true
   sleep 1
