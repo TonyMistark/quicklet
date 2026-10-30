@@ -134,6 +134,8 @@ struct CommandsPage: View {
 
 private struct CommandRow: View {
     @Binding var command: QuickletCommand
+    @State private var isRenaming = false
+    @FocusState private var nameFieldFocused: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -141,8 +143,16 @@ private struct CommandRow: View {
                 .frame(width: 20)
                 .foregroundStyle(command.enabled ? Color.accentColor : Color.secondary)
             VStack(alignment: .leading, spacing: 1) {
-                Text(command.name.isEmpty ? "（未命名）" : command.name)
-                    .strikethrough(!command.enabled)
+                if isRenaming {
+                    TextField("名称", text: $command.name)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($nameFieldFocused)
+                        .onSubmit(endRenaming)
+                        .onExitCommand(perform: endRenaming)
+                } else {
+                    Text(command.name.isEmpty ? "（未命名）" : command.name)
+                        .strikethrough(!command.enabled)
+                }
                 if command.isGrouped {
                     Text(command.menuPath)
                         .font(.caption2)
@@ -159,6 +169,17 @@ private struct CommandRow: View {
             }
         }
         .padding(.vertical, 2)
+        // Finder-style rename: double-click the row to edit its name in place.
+        .onTapGesture(count: 2) {
+            isRenaming = true
+            nameFieldFocused = true
+        }
+        .help("双击可直接重命名")
+    }
+
+    private func endRenaming() {
+        isRenaming = false
+        nameFieldFocused = false
     }
 }
 
@@ -175,6 +196,7 @@ struct CommandInspector: View {
     @State private var isGrouped: Bool
     @State private var group1: String
     @State private var group2: String
+    @State private var isHoveringName = false
 
     private let presetIcons = [
         "terminal", "chevron.left.forwardslash.chevron.right", "folder",
@@ -212,9 +234,29 @@ struct CommandInspector: View {
                 .font(.system(size: 24))
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 30)
-            TextField("名称", text: $command.name)
-                .textFieldStyle(.plain)
-                .font(.title2.bold())
+            HStack(spacing: 6) {
+                TextField("名称", text: $command.name)
+                    .textFieldStyle(.plain)
+                    .font(.title2.bold())
+                Image(systemName: "pencil")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary.opacity(isHoveringName ? 0.9 : 0.4))
+            }
+            // A plain text field styled as a title reads as a static label,
+            // which hid the rename entry completely. A faint bordered well
+            // plus the pencil makes "this is editable" visible at a glance.
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Color.primary.opacity(isHoveringName ? 0.07 : 0.035),
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.primary.opacity(isHoveringName ? 0.3 : 0.12))
+            )
+            .onHover { isHoveringName = $0 }
+            .help("点击即可修改名称，修改自动保存；也可以在左侧列表双击命令重命名")
             Toggle("已启用", isOn: $command.enabled)
                 .toggleStyle(.switch)
                 .controlSize(.small)
