@@ -88,15 +88,28 @@ final class FinderSync: FIFinderSync {
         let item = NSMenuItem(title: command.name, action: #selector(runCommand(_:)), keyEquivalent: "")
         item.target = self
         item.image = NSImage(systemSymbolName: command.icon, accessibilityDescription: command.name)
-        item.representedObject = command.id
+        // The menu travels between the extension and Finder and back, so
+        // representedObject must survive a round-trip. Only property-list
+        // types do: a UUID object arrives as nil on the way back, which
+        // silently swallowed every click. Ship the UUID as a string.
+        item.representedObject = command.id.uuidString
         return item
     }
 
     // MARK: - Hand-off
 
     @objc private func runCommand(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? UUID,
-              let command = store.commands.first(where: { $0.id == id }) else { return }
+        Diagnostics.log("menu item clicked: '\(sender.title)'")
+
+        guard let idString = sender.representedObject as? String,
+              let id = UUID(uuidString: idString) else {
+            Diagnostics.log("representedObject is not a UUID string: \(String(describing: sender.representedObject))")
+            return
+        }
+        guard let command = store.commands.first(where: { $0.id == id }) else {
+            Diagnostics.log("command \(id) not found in store (\(store.commands.count) loaded)")
+            return
+        }
 
         let controller = FIFinderSyncController.default()
         var urls = controller.selectedItemURLs() ?? []
