@@ -12,7 +12,6 @@ struct AboutSettingsView: View {
         Form {
             versionSection
             updateSection
-            linksSection
             dataSection
         }
         .formStyle(.grouped)
@@ -71,22 +70,18 @@ struct AboutSettingsView: View {
                 .disabled(checker.isChecking || installer.phase.isWorking)
             }
 
-            if case .failed = checker.status, !checker.lastFailures.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("检查失败：")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    ForEach(checker.lastFailures) { failure in
-                        Text("\(failure.source) · \(failure.reason)")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
+            // Only the outcome belongs here. Where the package comes from,
+            // which host answered and what a mirror is are all internal: the
+            // reader asked for a newer version, not for a download route.
+            if case .failed = checker.status {
+                Text("暂时无法检查更新，请稍后重试。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if case .failed = installer.phase {
+                Text("更新没有完成，当前版本仍然可用。稍后可以再试。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-
-            Text("启动时最多每 24 小时查一次（失败后 1 小时重试）。更新包从 GitHub 下载，Gitee 作为备源。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -95,25 +90,11 @@ struct AboutSettingsView: View {
     @ViewBuilder
     private var updateAction: some View {
         switch (checker.status, installer.phase) {
-        case (.available(let version, let sources), .idle):
-            if let primary = sources.first {
-                Button("更新…") {
-                    startInstall(from: primary, version: version, all: sources)
-                }
-                if sources.count > 1 {
-                    Menu("或从其他源下载") {
-                        ForEach(sources, id: \.name) { source in
-                            Button("从 \(source.name) 下载") {
-                                startInstall(from: source, version: version, all: sources)
-                            }
-                            Button("打开 \(source.name) 发布页") {
-                                NSWorkspace.shared.open(source.releaseURL)
-                            }
-                        }
-                    }
-                    .fixedSize()
-                }
+        case (.available(let version, let downloads), .idle):
+            Button("更新到 \(version)") {
+                startInstall(version: version, downloads: downloads)
             }
+            .disabled(downloads.isEmpty)
         case (_, .downloading):
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small).scaleEffect(0.7)
@@ -126,7 +107,7 @@ struct AboutSettingsView: View {
             }
         case (_, .failed(let reason)):
             if installer.downloadedArchive != nil {
-                Button("显示下载的压缩包") { installer.revealFallback() }
+                Button("显示已下载的安装包") { installer.revealFallback() }
                     .help(reason)
             } else {
                 Image(systemName: "exclamationmark.triangle")
@@ -138,37 +119,16 @@ struct AboutSettingsView: View {
         }
     }
 
-    private func startInstall(from source: UpdateSource, version: String, all: [UpdateSource]) {
-        guard let asset = source.asset else {
-            NSWorkspace.shared.open(source.releaseURL)
-            return
-        }
+    /// The installer walks the list on its own: primary host first, mirror
+    /// second. One click, no route to choose.
+    private func startInstall(version: String, downloads: [UpdateAsset]) {
+        guard let primary = downloads.first else { return }
         Task {
             await installer.run(
-                asset: asset,
+                asset: primary,
                 version: version,
-                releaseURL: source.releaseURL,
-                fallbacks: all.filter { $0.name != source.name }.compactMap(\.asset)
+                fallbacks: Array(downloads.dropFirst())
             )
-        }
-    }
-
-    // MARK: - Links
-
-    private var linksSection: some View {
-        Section("链接") {
-            Button("GitHub 仓库（开发主线）") {
-                open("https://github.com/TonyMistark/quicklet")
-            }
-            Button("Gitee 镜像（发布版）") {
-                open("https://gitee.com/Micestark/quicklet")
-            }
-            Button("反馈问题") {
-                open("https://github.com/TonyMistark/quicklet/issues")
-            }
-            Button("关于 Quicklet") {
-                AboutPanel.show()
-            }
         }
     }
 
@@ -194,36 +154,26 @@ struct AboutSettingsView: View {
             }
         }
     }
-
-    private func open(_ string: String) {
-        guard let url = URL(string: string) else { return }
-        NSWorkspace.shared.open(url)
-    }
 }
 
 // MARK: - About panel
 
-/// The system about panel, shared by the app menu and the about page.
+/// The system about panel, shared by the app menu and the profile block.
+/// No repository link in the credits: this build is handed to people as an
+/// app, and a project URL is not something they asked to see.
 @MainActor
 enum AboutPanel {
     static func show() {
-        let repository = "https://github.com/TonyMistark/quicklet"
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
 
-        let text = "Finder 右键菜单定制器\ngithub.com/TonyMistark/quicklet"
         let credits = NSMutableAttributedString(
-            string: text,
+            string: "Finder 右键菜单定制器",
             attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
                 .foregroundColor: NSColor.secondaryLabelColor,
                 .paragraphStyle: paragraph,
             ]
-        )
-        credits.addAttribute(
-            .link,
-            value: repository,
-            range: (text as NSString).range(of: "github.com/TonyMistark/quicklet")
         )
 
         NSApp.orderFrontStandardAboutPanel(options: [

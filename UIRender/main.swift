@@ -13,21 +13,52 @@ func render(_ view: NSView, width: CGFloat, height: CGFloat, to path: String) {
     try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
 }
 
-let store = CommandStore(fileURL: URL(fileURLWithPath: "/tmp/uirender/commands.json"))
-var draft = QuickletCommand()
-draft.enabled = false
-store.commands = [
-    QuickletCommand(name: "在终端中打开", icon: "terminal", script: #"open -a Terminal {dir}"#),
-    QuickletCommand(name: "新建文件…", icon: "doc.badge.plus", script: "touch {dir}/{input}", promptTitle: "新建文件", promptPlaceholder: "文件名，例如 notes.md"),
-    QuickletCommand(name: "复制路径", icon: "doc.on.doc", script: "printf '%s\\n' {paths} | pbcopy", group: ["文件"]),
-    draft,
-]
+let json = #"{"tag_name":"v1.0.9","assets":[{"name":"Quicklet-v1.0.9.zip","size":1336600,"browser_download_url":"https://example.invalid/primary/Quicklet-v1.0.9.zip"}]}"#
 
-// Standalone inspector (List does not paint rows without a real window).
-let inspector = CommandInspector(
-    command: Binding(get: { store.commands[1] }, set: { store.commands[1] = $0 }),
-    allCommands: store.commands
-)
-render(NSHostingView(rootView: inspector.frame(width: 624, height: 580).background(Color(nsColor: .windowBackgroundColor))),
-       width: 624, height: 580, to: "/tmp/uirender/inspector.png")
+var finished = false
+Task { @MainActor in
+    // Two feeds: the primary reports a newer release, the mirror's API is
+    // unreachable - the case that must still yield a fallback download.
+    let configuration = UpdateChecker.Configuration(
+        currentVersion: "1.0.4",
+        sources: [
+            .init(name: "GitHub", endpoint: URL(string: "https://example.invalid/primary")!),
+            .init(name: "Gitee", endpoint: URL(string: "https://example.invalid/mirror")!,
+                  assetTemplate: "https://gitee.com/Micestark/quicklet/releases/download/{tag}/{file}"),
+        ],
+        interval: 0,
+        retryInterval: 0
+    )
+
+    let checker = UpdateChecker(
+        configuration: configuration,
+        defaults: UserDefaults(suiteName: "uirender")!,
+        fetch: { source in
+            if source.name == "GitHub" {
+                return (Data(json.utf8), HTTPURLResponse(url: source.endpoint, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            throw URLError(.badServerResponse)
+        }
+    )
+    let installer = UpdateInstaller()
+    let profile = ProfileStore(directory: URL(fileURLWithPath: "/tmp/uirender/profile"))
+
+    await checker.check(force: true)
+    if case .available(let version, let downloads) = checker.status {
+        print("version: \(version)")
+        print("downloads: \(downloads.count)")
+        for asset in downloads { print("  - \(asset.url.host() ?? "?") \(asset.name)") }
+    } else {
+        print("unexpected status: \(checker.status)")
+    }
+
+    render(
+        NSHostingView(rootView: AboutSettingsView(profile: profile, checker: checker, installer: installer)
+            .frame(width: 624, height: 560)
+            .background(Color(nsColor: .windowBackgroundColor))),
+        width: 624, height: 560, to: "/tmp/uirender/about.png"
+    )
+    finished = true
+}
+while !finished { RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05)) }
 print("rendered")

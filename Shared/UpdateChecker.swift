@@ -10,10 +10,10 @@ enum UpdateStatus: Equatable {
     case idle
     case checking
     case upToDate(version: String)
-    /// A newer release exists. `sources` lists the places that reported the
-    /// same version (GitHub first, Gitee second); a source without a zip
-    /// asset makes the UI fall back to opening its release page.
-    case available(version: String, sources: [UpdateSource])
+    /// A newer release exists. `downloads` is the ordered list of zips for
+    /// that version: the primary host first, the mirror second. The caller
+    /// just walks it, so which host answers is never the user's problem.
+    case available(version: String, downloads: [UpdateAsset])
     case failed
 }
 
@@ -42,13 +42,6 @@ struct UpdateAsset: Equatable {
     }
 }
 
-/// One place a build can be downloaded from.
-struct UpdateSource: Equatable {
-    let name: String
-    let asset: UpdateAsset?
-    let releaseURL: URL
-}
-
 /// Checks the release feeds at most once a day and reports whether something
 /// newer is out.
 ///
@@ -66,18 +59,23 @@ struct UpdateSource: Equatable {
 final class UpdateChecker: ObservableObject {
     struct Configuration {
         struct Source {
-            /// Shown in the UI ("GitHub", "Gitee").
+            /// Used in the diagnostic log only, never shown in the UI.
             let name: String
             /// "Latest release" endpoint. GitHub and Gitee API v5 are close
             /// enough that one decoder handles both.
             let endpoint: URL
-            /// Release page template (`{}` is replaced by the tag). Gitee's
-            /// JSON carries no `html_url`, so the page URL is built here.
-            var pageTemplate: String = ""
+            /// Release asset URL template (`{tag}` / `{file}`). Empty for the
+            /// primary host, where the feed itself always carries the asset.
+            var assetTemplate: String = ""
 
-            func page(forTag tag: String) -> URL? {
-                guard !pageTemplate.isEmpty else { return nil }
-                return URL(string: pageTemplate.replacingOccurrences(of: "{}", with: tag))
+            /// Builds a download URL without asking the feed. Used for the
+            /// mirror, whose API may be blocked while its files are fine.
+            func assetURL(tag: String, file: String) -> URL? {
+                guard !assetTemplate.isEmpty else { return nil }
+                let filled = assetTemplate
+                    .replacingOccurrences(of: "{tag}", with: tag)
+                    .replacingOccurrences(of: "{file}", with: file)
+                return URL(string: filled)
             }
         }
 
@@ -96,7 +94,10 @@ final class UpdateChecker: ObservableObject {
                 Source(
                     name: "Gitee",
                     endpoint: URL(string: "https://gitee.com/api/v5/repos/Micestark/quicklet/releases/latest")!,
-                    pageTemplate: "https://gitee.com/Micestark/quicklet/releases/tag/{}"
+                    // Lets the installer build the mirror download even when
+                    // the Gitee feed itself was rate limited or unreachable
+                    // at check time.
+                    assetTemplate: "https://gitee.com/Micestark/quicklet/releases/download/{tag}/{file}"
                 ),
             ],
             interval: 24 * 60 * 60,
@@ -272,25 +273,27 @@ final class UpdateChecker: ObservableObject {
         }
 
         // Feeds can disagree (a tag pushed to GitHub but not yet to Gitee):
-        // the higher version wins, and every source reporting it is kept so
-        // the user can pick a download location. Sorting by configured order
-        // keeps "primary source" stable regardless of which response landed
+        // the higher version wins. Sorting by configured order keeps the
+        // primary download source stable regardless of which response landed
         // first.
         var bestVersion: AppVersion?
-        var sources: [UpdateSource] = []
+        var bestTag: String?
+        var assets: [UpdateAsset] = []
         for piece in releases.sorted(by: { index(of: $0.source) < index(of: $1.source) }) {
             guard !piece.release.draft, !piece.release.prerelease,
                   let version = AppVersion(piece.release.tagName) else { continue }
-            if let best = bestVersion {
-                if version > best {
-                    bestVersion = version
-                    sources = [piece.release.updateSource(on: piece.source)]
-                } else if version == best {
-                    sources.append(piece.release.updateSource(on: piece.source))
-                }
-            } else {
+            guard let best = bestVersion else {
                 bestVersion = version
-                sources = [piece.release.updateSource(on: piece.source)]
+                bestTag = piece.release.tagName
+                assets = [piece.release.asset].compactMap { $0 }
+                continue
+            }
+            if version > best {
+                bestVersion = version
+                bestTag = piece.release.tagName
+                assets = [piece.release.asset].compactMap { $0 }
+            } else if version == best, let asset = piece.release.asset {
+                assets.append(asset)
             }
         }
 
@@ -299,12 +302,30 @@ final class UpdateChecker: ObservableObject {
             return
         }
         if latest > current {
-            Diagnostics.log("update available: \(latest.description) (current \(configuration.currentVersion))")
-            status = .available(version: latest.description, sources: sources)
+            let downloads = withMirrorFallback(assets, tag: bestTag)
+            Diagnostics.log("update available: \(latest.description) (current \(configuration.currentVersion)), \(downloads.count) download source(s)")
+            status = .available(version: latest.description, downloads: downloads)
         } else {
             Diagnostics.log("update check ok: \(current.description) is current")
             flash(.upToDate(version: current.description))
         }
+    }
+
+    /// Guarantees a second download location for the same version.
+    ///
+    /// The mirror's feed is read during the check, but it is the weakest link
+    /// in the chain: a rate limit, a blocked API host or a release created a
+    /// few minutes ago all mean "no asset reported" while the file itself is
+    /// perfectly downloadable. Building the URL from tag + filename costs
+    /// nothing and only fails if the mirror really has no such release.
+    private func withMirrorFallback(_ assets: [UpdateAsset], tag: String?) -> [UpdateAsset] {
+        guard let tag,
+              let primary = assets.first,
+              let mirror = configuration.sources.first(where: { !$0.assetTemplate.isEmpty }),
+              let url = mirror.assetURL(tag: tag, file: primary.name),
+              !assets.contains(where: { $0.url.host() == url.host() })
+        else { return assets }
+        return assets + [UpdateAsset(url: url, name: primary.name, byteCount: primary.byteCount)]
     }
 
     // MARK: - Throttling
@@ -346,24 +367,21 @@ final class UpdateChecker: ObservableObject {
 }
 
 /// Release JSON from GitHub and Gitee. Both omit fields the other has
-/// (`html_url` only on GitHub, `draft`/`prerelease` only there too), so every
-/// optional is decoded leniently - a missing key is not an error.
+/// (`draft`/`prerelease` only on GitHub), so every optional is decoded
+/// leniently - a missing key is not an error.
 struct RemoteRelease: Decodable {
     let tagName: String
-    let htmlURL: URL?
     let draft: Bool
     let prerelease: Bool
     private let assets: [Asset]?
 
     init(
         tagName: String,
-        htmlURL: URL? = nil,
         draft: Bool = false,
         prerelease: Bool = false,
         assets: [Asset]? = nil
     ) {
         self.tagName = tagName
-        self.htmlURL = htmlURL
         self.draft = draft
         self.prerelease = prerelease
         self.assets = assets
@@ -372,24 +390,9 @@ struct RemoteRelease: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         tagName = try container.decode(String.self, forKey: .tagName)
-        htmlURL = try? container.decode(URL.self, forKey: .htmlURL)
         draft = (try? container.decode(Bool.self, forKey: .draft)) ?? false
         prerelease = (try? container.decode(Bool.self, forKey: .prerelease)) ?? false
         assets = try? container.decode([Asset].self, forKey: .assets)
-    }
-
-    func updateSource(on source: UpdateChecker.Configuration.Source) -> UpdateSource {
-        UpdateSource(
-            name: source.name,
-            asset: asset,
-            releaseURL: htmlURL ?? source.page(forTag: tagName) ?? fallbackPage
-        )
-    }
-
-    /// Neither the feed nor a template gives a page: the releases list is the
-    /// least surprising place to land.
-    private var fallbackPage: URL {
-        URL(string: "https://github.com/TonyMistark/quicklet/releases")!
     }
 
     var asset: UpdateAsset? {
@@ -404,7 +407,6 @@ struct RemoteRelease: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
-        case htmlURL = "html_url"
         case draft
         case prerelease
         case assets

@@ -40,7 +40,7 @@ final class UpdateInstaller: ObservableObject {
 
     // MARK: - Entry point
 
-    func run(asset: UpdateAsset, version: String, releaseURL: URL, fallbacks: [UpdateAsset] = []) async {
+    func run(asset: UpdateAsset, version: String, fallbacks: [UpdateAsset] = []) async {
         guard !phase.isWorking else { return }
 
         do {
@@ -72,21 +72,26 @@ final class UpdateInstaller: ObservableObject {
 
     // MARK: - Steps
 
-    /// Tries the primary source first, then the mirrors for the same version:
-    /// a blocked CDN is the most common download failure, and switching hosts
-    /// is cheaper than asking the user to click again.
+    /// Tries the primary source first, then the mirrors for the same version.
+    /// A stalled or blocked download is by far the most common failure (GitHub
+    /// from mainland China), and switching hosts is cheaper - and quieter -
+    /// than asking the user to press update again.
     private func downloadFirst(_ assets: [UpdateAsset]) async throws -> URL {
         var lastError: Error = InstallError.noAsset
-        for asset in assets {
+        for (index, asset) in assets.enumerated() {
             do {
                 let file = try await download(asset)
-                if assets.count > 1 {
-                    Diagnostics.log("update: downloaded from \(asset.name) (\(asset.url.host() ?? "?"))")
-                }
+                let host = asset.url.host() ?? "?"
+                Diagnostics.log(index == 0
+                    ? "update: downloaded \(asset.name) from primary (\(host))"
+                    : "update: downloaded \(asset.name) from fallback \(index) (\(host))")
                 return file
             } catch {
                 lastError = error
-                Diagnostics.log("update: download from \(asset.name) failed: \(error.localizedDescription)")
+                Diagnostics.log("update: download from \(asset.url.host() ?? "?") failed: \(error.localizedDescription)")
+                if index + 1 < assets.count {
+                    Diagnostics.log("update: trying the next download source")
+                }
             }
         }
         throw lastError
@@ -94,7 +99,10 @@ final class UpdateInstaller: ObservableObject {
 
     private func download(_ asset: UpdateAsset) async throws -> URL {
         var request = URLRequest(url: asset.url)
-        request.timeoutInterval = 60
+        // Idle timeout, not a total budget: a slow but moving transfer keeps
+        // going, while a host that stops answering is abandoned quickly
+        // enough for the fallback to feel instant.
+        request.timeoutInterval = 90
         request.setValue("Quicklet/\(AppInfo.shortVersion)", forHTTPHeaderField: "User-Agent")
 
         let (temporary, response) = try await URLSession.shared.download(for: request)
