@@ -2,6 +2,8 @@
 
 macOS Finder 右键菜单定制器：把你的自定义 Shell 命令加进 Finder 右键第一级菜单。
 
+![Quicklet 设置窗口](docs/screenshots/main-window.jpg)
+
 > 产品文档见 [`docs/PRD.md`](docs/PRD.md)（定位、竞品分析、功能规格与验收标准、版本规划）；
 > 修改 PRD 后用 `python3 scripts/prd2html.py` 重新生成 HTML 阅读版。
 
