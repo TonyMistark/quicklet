@@ -66,6 +66,11 @@ struct CommandsPage: View {
                 CommandRow(command: $command)
                     .tag(command.id)
                     .contextMenu {
+                        Button("上移") { move(command.id, by: -1) }
+                            .disabled(!canMove(command.id, by: -1))
+                        Button("下移") { move(command.id, by: 1) }
+                            .disabled(!canMove(command.id, by: 1))
+                        Divider()
                         Button("删除", role: .destructive) {
                             store.commands.removeAll { $0.id == command.id }
                         }
@@ -73,6 +78,12 @@ struct CommandsPage: View {
             }
             .onDelete { indexSet in
                 store.commands.remove(atOffsets: indexSet)
+            }
+            // Drag to reorder. The array order IS the menu order: the
+            // extension builds the Finder menu by walking store.commands in
+            // sequence, and the debounced autosave persists the new order.
+            .onMove { from, to in
+                store.commands.move(fromOffsets: from, toOffset: to)
             }
         }
         .listStyle(.inset)
@@ -127,6 +138,19 @@ struct CommandsPage: View {
               let index = store.commands.firstIndex(where: { $0.id == id }) else { return }
         store.commands.remove(at: index)
         selectedID = nil
+    }
+
+    /// Context-menu fallback for reordering (drag handles are the primary
+    /// path). `by` is -1 for up, +1 for down.
+    private func canMove(_ id: UUID, by: Int) -> Bool {
+        guard let index = store.commands.firstIndex(where: { $0.id == id }) else { return false }
+        return (index + by) >= 0 && (index + by) < store.commands.count
+    }
+
+    private func move(_ id: UUID, by: Int) {
+        guard canMove(id, by: by),
+              let index = store.commands.firstIndex(where: { $0.id == id }) else { return }
+        store.commands.swapAt(index, index + by)
     }
 }
 
