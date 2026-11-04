@@ -12,6 +12,15 @@ struct CommandsPage: View {
     @ObservedObject var store: CommandStore
     @State private var selectedID: UUID?
 
+    // Custom drag-to-reorder state. The system List drag ghosts the row
+    // semi-transparently ON TOP of the still-visible original, which reads
+    // as two broken controls; drawing the drag ourselves keeps exactly one
+    // opaque card under the cursor.
+    @State private var draggingID: UUID?
+    @State private var dragAnchorY: CGFloat = 0
+    @State private var dragY: CGFloat = 0
+    @State private var rowFrames: [UUID: CGRect] = [:]
+
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -61,10 +70,28 @@ struct CommandsPage: View {
     }
 
     private var list: some View {
-        List(selection: $selectedID) {
-            ForEach($store.commands) { $command in
-                CommandRow(command: $command)
-                    .tag(command.id)
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach($store.commands) { $command in
+                    CommandRow(
+                        command: $command,
+                        onDragChanged: { handleDragChanged($0, id: command.id) },
+                        onDragEnded: { handleDragEnded(command.id) }
+                    )
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectedID = command.id }
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(selectedID == command.id
+                                  ? Color.accentColor.opacity(0.16)
+                                  : Color.clear)
+                    )
+                    // The floating card is the single visible copy while
+                    // dragging; the in-place row hides completely.
+                    .opacity(draggingID == command.id ? 0 : 1)
+                    .background(rowFrameReader(command.id))
                     .contextMenu {
                         Button("上移") { move(command.id, by: -1) }
                             .disabled(!canMove(command.id, by: -1))
@@ -75,18 +102,13 @@ struct CommandsPage: View {
                             store.commands.removeAll { $0.id == command.id }
                         }
                     }
+                }
             }
-            .onDelete { indexSet in
-                store.commands.remove(atOffsets: indexSet)
-            }
-            // Drag to reorder. The array order IS the menu order: the
-            // extension builds the Finder menu by walking store.commands in
-            // sequence, and the debounced autosave persists the new order.
-            .onMove { from, to in
-                store.commands.move(fromOffsets: from, toOffset: to)
-            }
+            .padding(.vertical, 4)
         }
-        .listStyle(.inset)
+        .coordinateSpace(name: "CommandList")
+        .onPreferenceChange(RowFrameKey.self) { rowFrames = $0 }
+        .overlay { dragPreview }
         .overlay {
             if store.commands.isEmpty {
                 Text("还没有自定义命令，点 + 新建一个")
@@ -95,6 +117,77 @@ struct CommandsPage: View {
                     .multilineTextAlignment(.center)
                     .padding()
             }
+        }
+    }
+
+    /// Captures each row's frame in the list's coordinate space so the drag
+    /// can compute where to drop.
+    private func rowFrameReader(_ id: UUID) -> some View {
+        GeometryReader { geo in
+            Color.clear.preference(
+                key: RowFrameKey.self,
+                value: [id: geo.frame(in: .named("CommandList"))]
+            )
+        }
+    }
+
+    /// The opaque card that follows the cursor while dragging a row.
+    @ViewBuilder
+    private var dragPreview: some View {
+        if let id = draggingID,
+           let command = store.commands.first(where: { $0.id == id }),
+           let frame = rowFrames[id] {
+            CommandRowContent(command: command)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .shadow(color: .black.opacity(0.28), radius: 7, y: 2)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(Color.primary.opacity(0.15))
+                )
+                .frame(width: frame.width)
+                .position(x: frame.midX, y: dragY)
+                .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: Drag reorder
+
+    private func handleDragChanged(_ value: DragGesture.Value, id: UUID) {
+        if draggingID != id {
+            draggingID = id
+            // Anchor the card where the row was grabbed, so it does not
+            // jump to the cursor's first sampled position.
+            dragAnchorY = value.location.y - (rowFrames[id]?.midY ?? value.location.y)
+        }
+        dragY = value.location.y - dragAnchorY
+        reorderLive(previewCenterY: dragY, draggingID: id)
+    }
+
+    private func handleDragEnded(_ id: UUID) {
+        draggingID = nil
+        dragY = 0
+        // The debounced autosave persists whatever order the array is in now.
+    }
+
+    /// Moves the dragged command while the card travels, so the other rows
+    /// part around it in real time. `previewCenterY` is the card's center in
+    /// the list coordinate space.
+    private func reorderLive(previewCenterY centerY: CGFloat, draggingID: UUID) {
+        guard let currentIndex = store.commands.firstIndex(where: { $0.id == draggingID }) else { return }
+        // Insertion slot among the rows that are NOT being dragged: how many
+        // of them sit above the card's center.
+        let remaining = store.commands.filter { $0.id != draggingID }
+        let above = remaining.filter { (rowFrames[$0.id]?.midY ?? 0) < centerY }.count
+        let target = above <= currentIndex ? above : above + 1
+        guard target != currentIndex else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            store.commands.move(fromOffsets: IndexSet(integer: currentIndex),
+                                toOffset: target)
         }
     }
 
@@ -158,8 +251,74 @@ struct CommandsPage: View {
 
 private struct CommandRow: View {
     @Binding var command: QuickletCommand
+    var onDragChanged: (DragGesture.Value) -> Void
+    var onDragEnded: () -> Void
     @State private var isRenaming = false
     @FocusState private var nameFieldFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: command.icon.isEmpty ? "questionmark" : command.icon)
+                    .frame(width: 20)
+                    .foregroundStyle(command.enabled ? Color.accentColor : Color.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    if isRenaming {
+                        TextField("名称", text: $command.name)
+                            .textFieldStyle(.roundedBorder)
+                            .focused($nameFieldFocused)
+                            .onSubmit(endRenaming)
+                            .onExitCommand(perform: endRenaming)
+                    } else {
+                        Text(command.name.isEmpty ? "（未命名）" : command.name)
+                            .strikethrough(!command.enabled)
+                    }
+                    if command.isGrouped {
+                        Text(command.menuPath)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                Spacer()
+                if command.script.isEmpty {
+                    Text("未设置命令")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            // Drag handle at the trailing edge. Dragging it reorders the
+            // list; a plain click on it does nothing (reorder needs motion).
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.secondary.opacity(0.55))
+                .padding(.horizontal, 2)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 3, coordinateSpace: .named("CommandList"))
+                        .onChanged(onDragChanged)
+                        .onEnded { _ in onDragEnded() }
+                )
+        }
+        .padding(.vertical, 2)
+        // Finder-style rename: double-click the row to edit its name in place.
+        .onTapGesture(count: 2) {
+            isRenaming = true
+            nameFieldFocused = true
+        }
+        .help("双击可直接重命名；拖动右侧把手可调整顺序")
+    }
+
+    private func endRenaming() {
+        isRenaming = false
+        nameFieldFocused = false
+    }
+}
+
+/// Static row content shared by the list row and the drag preview card.
+private struct CommandRowContent: View {
+    let command: QuickletCommand
 
     var body: some View {
         HStack(spacing: 10) {
@@ -167,16 +326,8 @@ private struct CommandRow: View {
                 .frame(width: 20)
                 .foregroundStyle(command.enabled ? Color.accentColor : Color.secondary)
             VStack(alignment: .leading, spacing: 1) {
-                if isRenaming {
-                    TextField("名称", text: $command.name)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($nameFieldFocused)
-                        .onSubmit(endRenaming)
-                        .onExitCommand(perform: endRenaming)
-                } else {
-                    Text(command.name.isEmpty ? "（未命名）" : command.name)
-                        .strikethrough(!command.enabled)
-                }
+                Text(command.name.isEmpty ? "（未命名）" : command.name)
+                    .strikethrough(!command.enabled)
                 if command.isGrouped {
                     Text(command.menuPath)
                         .font(.caption2)
@@ -191,19 +342,21 @@ private struct CommandRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.secondary.opacity(0.55))
+                .padding(.horizontal, 2)
         }
         .padding(.vertical, 2)
-        // Finder-style rename: double-click the row to edit its name in place.
-        .onTapGesture(count: 2) {
-            isRenaming = true
-            nameFieldFocused = true
-        }
-        .help("双击可直接重命名")
     }
+}
 
-    private func endRenaming() {
-        isRenaming = false
-        nameFieldFocused = false
+// MARK: - Row frame tracking
+
+private struct RowFrameKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] { [:] }
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 

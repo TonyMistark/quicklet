@@ -58,6 +58,16 @@ Task { @MainActor in
             .background(Color(nsColor: .windowBackgroundColor))),
         width: 624, height: 560, to: "/tmp/uirender/about.png"
     )
+
+    // Commands page: seeded store, light theme, to eyeball the drag handles
+    // and the selected row style.
+    let commands = CommandStore(fileURL: URL(fileURLWithPath: "/tmp/uirender/commands.json"))
+    render(
+        NSHostingView(rootView: CommandsPage(store: commands)
+            .frame(width: 760, height: 520)
+            .background(Color(nsColor: .windowBackgroundColor))),
+        width: 760, height: 520, to: "/tmp/uirender/commands.png"
+    )
     finished = true
 }
 while !finished { RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05)) }
